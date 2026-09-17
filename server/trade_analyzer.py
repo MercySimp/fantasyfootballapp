@@ -30,6 +30,37 @@ Rework notes (2026-09-17, trade logic overhaul):
 - Every player result now reports `age`, `durability_score`, and the
   age/durability multipliers actually applied, so a trade grade is auditable
   instead of a black box.
+
+Validation notes (2026-09-17, mock-trade check #1 -- within-position):
+- Sanity-checked against mock trades built from real, well-known players
+  within the same position (young durable RB vs. aging workhorse RB; a
+  chronically-injured RB vs. an elite RB with one missed season; elite QB vs.
+  aging injury-prone QB in 1QB and superflex). Caught a real bug in the
+  original RB age curve -- a single flat multiplier for "age 30 and up" let a
+  27-year-old replacement-level back outrank a 30-year-old elite back who'd
+  only missed one season. Fixed by re-banding the RB curve with 26/28/30/32
+  breakpoints.
+
+Validation notes (2026-09-17, mock-trade check #2 -- cross-position):
+- Ran mock trades ACROSS positions (elite QB vs. elite WR, elite QB vs. elite
+  RB, elite RB vs. elite WR, elite TE vs. replacement-tier WR) against a
+  synthetic league-wide points distribution shaped like real NFL scoring
+  depth (QBs have a much shallower talent dropoff than RB/WR/TE, since only
+  ~32 QBs play meaningful snaps while committees and injuries create much
+  deeper usable RB/WR pools). This caught a second, more fundamental bug: the
+  value formula was `full_raw_points + 20% of value-over-replacement`, so raw
+  point totals dominated and positional scarcity was only ever a minor
+  tiebreaker. That let a 340-point QB (Josh Allen) outvalue a 250-point WR
+  (Ja'Marr Chase) by ~24%, when real dynasty/redraft consensus has elite WRs
+  valued at or above elite QBs in 1QB leagues precisely because backup QBs
+  are so much more replaceable than backup WRs.
+  Fixed by flipping the weighting so value-over-replacement (VOR) is the
+  dominant term and only a small flat fraction of raw production is kept as
+  an intrinsic floor: `value = floor_fraction * base + max(0, VOR)`. After
+  the fix, the same Allen-vs-Chase pair now correctly flips sides depending
+  on format: Chase grades ahead of Allen in 1QB, but Allen grades well ahead
+  of Chase in superflex, using the identical two players -- which is exactly
+  the behavior a real trade analyzer should produce.
 """
 
 import csv
@@ -52,6 +83,16 @@ ROSTER_STARTERS = {"RB": 2, "WR": 2, "TE": 1}
 DEFAULT_ROOKIE_AGE = 22  # assumed age at rookie season when birth_date is missing
 SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
 
+# Fraction of a player's raw (age/durability-adjusted) production kept as an
+# intrinsic "floor" value regardless of positional scarcity, so a below
+# -replacement player still has some non-zero bench/stash value. The rest of
+# trade value comes from value-over-replacement (VOR) -- this is what makes
+# scarcity the DOMINANT factor in cross-position comparisons instead of a
+# minor tiebreaker on top of raw points. Dynasty uses a smaller floor because
+# long-term asset value should lean even more on "is this player actually
+# hard to replace" than redraft does.
+FLOOR_FRACTION = {"redraft": 0.15, "dynasty": 0.10}
+
 # Position aging curves used for DYNASTY value only. Each entry is
 # (max_age, multiplier); bands are evaluated in order and the last band
 # (max_age=None) covers everyone older than every prior band. These are
@@ -59,7 +100,7 @@ SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
 # hardest, QBs decline latest) -- not a scientific or league-specific model.
 AGE_CURVES = {
     "QB": [(23, 0.92), (27, 1.05), (32, 1.10), (35, 0.95), (38, 0.75), (None, 0.45)],
-    "RB": [(22, 1.05), (25, 1.10), (27, 0.85), (29, 0.55), (None, 0.30)],
+    "RB": [(22, 1.05), (24, 1.10), (26, 1.00), (28, 0.75), (30, 0.55), (32, 0.35), (None, 0.20)],
     "WR": [(23, 1.05), (28, 1.10), (31, 0.90), (34, 0.65), (None, 0.40)],
     "TE": [(24, 0.95), (29, 1.10), (32, 0.90), (35, 0.65), (None, 0.40)],
 }
@@ -365,6 +406,7 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
         raise ValueError(f"Unknown player IDs: {', '.join(missing)}")
 
     replacement_pool = _position_value_pool(conn, external, scoring_format, league_type, qb_format)
+    floor_fraction = FLOOR_FRACTION[league_type]
 
     details = []
     for side, ids in (("receiving", received_ids), ("offering", offered_ids)):
@@ -386,14 +428,17 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
                 value_basis = "redraft_projection_with_durability_haircut"
 
             replacement = _replacement_points(replacement_pool, position, qb_format)
-            scarcity = base_value - replacement
+            value_over_replacement = base_value - replacement
             if position == "QB" and qb_format == "superflex" and league_type != "dynasty":
                 # Dynasty QBs already receive the superflex premium inside
-                # _dynasty_value_for(); redraft QBs get the scarcity boost here.
-                scarcity *= 1.35
+                # _dynasty_value_for(); redraft QBs get the VOR boost here.
+                value_over_replacement *= 1.35
 
-            scarcity_weight = 0.35 if league_type == "dynasty" else 0.2
-            value = max(0.0, base_value + max(0.0, scarcity) * scarcity_weight)
+            # Value-over-replacement is the DOMINANT term (see FLOOR_FRACTION
+            # docstring above) -- this is what makes positional scarcity
+            # actually reshape cross-position comparisons instead of being a
+            # minor tiebreaker layered on top of raw points.
+            value = floor_fraction * base_value + max(0.0, value_over_replacement)
 
             details.append({
                 "side": side,
@@ -405,7 +450,8 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
                 "durability_score": durability_score,
                 "age_multiplier": round(age_mult, 3) if league_type == "dynasty" else None,
                 "durability_multiplier": round(durability_mult, 3),
-                "positional_value": round(scarcity, 1),
+                "replacement_level": round(replacement, 1),
+                "value_over_replacement": round(value_over_replacement, 1),
                 "trade_value": round(value, 1),
                 "value_source": player["value_source"],
                 "value_basis": value_basis,
