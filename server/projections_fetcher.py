@@ -1,6 +1,12 @@
 """Fetch projection CSVs from FootballGuys (anonymous) and normalize them.
-Saves a consolidated CSV at data/projections.csv with columns:
+Saves a consolidated CSV at data/projections.csv (rest-of-season / full season
+horizon) with columns:
 player_id,player_name,position,team,projection_standard,projection_half_ppr,projection_ppr,dynasty_value
+
+Also saves data/projections_weekly.csv (short-term, single upcoming week
+horizon) with the same columns, for trade/roster decisions where near-term
+value matters more than full-season value (e.g. evaluating a trade right
+before a bye week or a tough playoff schedule stretch).
 
 This is best-effort: when player_id is not available the normalized player_name+team is used as a stable id.
 
@@ -14,11 +20,18 @@ Fix notes (2026-09-17 review):
   "successful" just because the HTTP request didn't raise an exception.
 - The default week now advances automatically based on the current date
   instead of being pinned to Week 2 all season.
-- Before overwriting the existing data/projections.csv, we compare the new
-  row count against the current file. If the new fetch would replace a
-  healthy file with a drastically smaller one, we refuse to save and report
-  an error instead of silently degrading the trade analyzer's data.
-- Known follow-up (not fixed here): the generated fallback player_id scheme
+- Before overwriting either existing CSV, we compare the new row count
+  against the current file. If the new fetch would replace a healthy file
+  with a drastically smaller one, we refuse to save and report an error
+  instead of silently degrading the data.
+- 2026-09-17 (weekly-projections request): previously the "weekly" and
+  "restofseason" variants were merged into a single aggregated dict with
+  restofseason always winning, so short-term/single-week projections were
+  fetched but then silently discarded. Now both horizons are tracked and
+  saved separately -- data/projections.csv stays rest-of-season (used for
+  season-long trade value), and the new data/projections_weekly.csv carries
+  the single-upcoming-week numbers for short-term decisions.
+- Known follow-up (not fixed here): the fallback player_id scheme
   (normalized name + team) does not match the PFR-style IDs used elsewhere
   in this app's players table / data/projections.csv. Confirm the real ID
   scheme used by the `players` table and align `_make_player_id` to it, or
@@ -50,6 +63,13 @@ DEFAULT_VARIANTS = ("weekly", "restofseason")
 
 
 def _current_nfl_week(today=None):
+    """Best-effort estimate of the current NFL week based on the calendar.
+
+    This is a heuristic (regular season kicks off roughly the first Thursday
+    after Labor Day) and should be treated as an approximation, not a source
+    of truth. It exists only so the fetcher doesn't stay pinned to Week 2 for
+    the entire season.
+    """
     today = today or date.today()
     season_start = date(today.year, 9, 5)
     if today < season_start:
@@ -79,6 +99,16 @@ def _make_player_id(name: str, team: str) -> str:
 
 
 def _download_urls(year=None, week=None, root=DEFAULT_DOWNLOAD_ROOT):
+    """Return FootballGuys' direct CSV download URLs.
+
+    The download endpoint returns CSV bytes without a .csv suffix, so scraping
+    the projections landing page cannot discover these files reliably.
+
+    NOTE: this URL pattern has not been independently verified against a live
+    authenticated FootballGuys account. Treat downloads from it as untrusted
+    until confirmed, which is why _read_csv_from_url() below validates the
+    response shape before accepting it.
+    """
     year = str(year or os.getenv("FOOTBALLGUYS_YEAR", DEFAULT_YEAR))
     week = str(week or os.getenv("FOOTBALLGUYS_WEEK", DEFAULT_WEEK))
     positions = os.getenv("FOOTBALLGUYS_POSITIONS", "all").split(",")
@@ -224,7 +254,12 @@ def _map_row_to_standard(row: dict):
 
 
 def fetch_footballguys_and_normalize(year=None, week=None, root=DEFAULT_DOWNLOAD_ROOT):
-    aggregated = {}
+    """Fetches both the weekly (single upcoming week) and restofseason
+    (full-season horizon) variants and keeps them as SEPARATE aggregated
+    dicts -- previously these were merged into one dict with restofseason
+    always winning, silently discarding the weekly numbers entirely.
+    """
+    aggregated = {"weekly": {}, "restofseason": {}}
     sources = []
     for variant, position, url in _download_urls(year, week, root):
         rows, err = _read_csv_from_url(url)
@@ -235,22 +270,22 @@ def fetch_footballguys_and_normalize(year=None, week=None, root=DEFAULT_DOWNLOAD
         for r in rows:
             mapped = _map_row_to_standard(r)
             pid = mapped["player_id"]
-            existing = aggregated.get(pid)
+            existing = aggregated[variant].get(pid)
             if not existing:
-                aggregated[pid] = mapped
+                aggregated[variant][pid] = mapped
             else:
                 for k in ("player_name", "position", "team"):
                     if not existing.get(k) and mapped.get(k):
                         existing[k] = mapped[k]
-                if variant == "restofseason" or existing.get("_variant") != "restofseason":
-                    for k in ("projection_standard", "projection_half_ppr", "projection_ppr", "dynasty_value"):
-                        if mapped.get(k) is not None:
-                            existing[k] = mapped[k]
-                    existing["_variant"] = variant
-                aggregated[pid] = existing
+                for k in ("projection_standard", "projection_half_ppr", "projection_ppr", "dynasty_value"):
+                    if mapped.get(k) is not None:
+                        existing[k] = mapped[k]
+                aggregated[variant][pid] = existing
 
+    # A source only counts as "successful" if it actually returned rows we
+    # were able to parse into real projection data, not merely a 200 status.
     successful = [source for source in sources if "error" not in source and source.get("count", 0) > 0]
-    if not successful or not aggregated:
+    if not successful or not (aggregated["weekly"] or aggregated["restofseason"]):
         return {
             "ok": False,
             "error": "All FootballGuys projection downloads failed or returned no usable rows",
@@ -282,40 +317,49 @@ def _existing_row_count(dest_path: str) -> int:
         return 0
 
 
-def fetch_and_save(dest_path=None, year=None, week=None, root=DEFAULT_DOWNLOAD_ROOT):
-    if not dest_path:
-        dest_path = os.path.join(os.path.dirname(__file__), "data", "projections.csv")
-    res = fetch_footballguys_and_normalize(year=year, week=week, root=root)
-    if not res.get("ok"):
-        return res
-    aggregated = res.get("aggregated", {})
-
+def _safe_save(aggregated_variant: dict, dest_path: str, label: str):
     existing_count = _existing_row_count(dest_path)
-    if existing_count >= 20 and len(aggregated) < existing_count * 0.5:
+    if existing_count >= 20 and len(aggregated_variant) < existing_count * 0.5:
         return {
             "ok": False,
             "error": (
-                f"Refusing to overwrite existing projections.csv ({existing_count} rows) "
-                f"with a much smaller fetch result ({len(aggregated)} rows) -- this usually "
-                f"means the FootballGuys fetch was blocked, redirected, or unauthenticated."
+                f"Refusing to overwrite existing {label} ({existing_count} rows) "
+                f"with a much smaller fetch result ({len(aggregated_variant)} rows) -- this "
+                f"usually means the FootballGuys fetch was blocked, redirected, or unauthenticated."
             ),
-            "sources": res.get("sources", []),
         }
-
     try:
-        save_aggregated(aggregated, dest_path)
+        save_aggregated(aggregated_variant, dest_path)
     except Exception as exc:
-        return {"ok": False, "error": f"Failed to save: {exc}"}
+        return {"ok": False, "error": f"Failed to save {label}: {exc}"}
+    return {"ok": True, "saved_path": dest_path, "count": len(aggregated_variant)}
+
+
+def fetch_and_save(dest_path=None, weekly_dest_path=None, year=None, week=None, root=DEFAULT_DOWNLOAD_ROOT):
+    if not dest_path:
+        dest_path = os.path.join(os.path.dirname(__file__), "data", "projections.csv")
+    if not weekly_dest_path:
+        weekly_dest_path = os.path.join(os.path.dirname(__file__), "data", "projections_weekly.csv")
+
+    res = fetch_footballguys_and_normalize(year=year, week=week, root=root)
+    if not res.get("ok"):
+        return res
+
+    aggregated = res.get("aggregated", {})
+    restofseason_result = _safe_save(aggregated.get("restofseason", {}), dest_path, "projections.csv")
+    weekly_result = _safe_save(aggregated.get("weekly", {}), weekly_dest_path, "projections_weekly.csv")
+
+    ok = restofseason_result.get("ok") or weekly_result.get("ok")
     return {
-        "ok": True,
-        "saved_path": dest_path,
+        "ok": ok,
+        "restofseason": restofseason_result,
+        "weekly": weekly_result,
         "sources": res.get("sources", []),
-        "count": len(aggregated),
-        "projection_horizon": "restofseason preferred; weekly used when needed",
     }
 
 
 def periodic_fetcher(interval_seconds=7 * 24 * 3600, year=None, week=None, root=DEFAULT_DOWNLOAD_ROOT):
+    """Run an infinite loop fetching every interval_seconds. Exceptions are swallowed to keep the thread alive."""
     while True:
         try:
             print(f"[projections_fetcher] Running fetch at {time.ctime()}")

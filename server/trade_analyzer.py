@@ -8,65 +8,60 @@ labelled weighted projection from the three most recent loaded seasons.
 Rework notes (2026-09-17, trade logic overhaul):
 - Dynasty and redraft now diverge based on real signals pulled from the
   `players` table (birth_date / rookie_year) and `player_stats_seasonal`
-  (games_played history), not just a copy of the season projection:
-    * Age: converted to a position-specific aging-curve multiplier. RBs are
-      discounted hardest starting in their mid/late 20s (the well-known "RB
-      dead zone"), while QBs retain value the longest.
-    * Durability: the average games-played rate over each player's most
-      recent seasons on record is used as an injury-proneness proxy. There is
-      no injury-report table in this schema, so recent per-season
-      availability is the closest real signal available. Low durability
-      discounts dynasty value more heavily than redraft value, since a
-      single missed season matters far more to a multi-year dynasty asset
-      than to a one-year redraft asset.
-    * Superflex: on top of the existing QB replacement-level widening (2
-      starters counted instead of 1), dynasty QB value gets an additional
-      premium in superflex leagues to reflect the much longer runway teams
-      get from a good starting QB when every roster needs two.
-- Positional replacement level ("scarcity") is now computed on the same
-  value basis being scored: a dynasty-adjusted pool (age + durability) for
-  dynasty leagues, or a raw-projection pool for redraft leagues -- instead of
-  mixing a redraft-shaped scarcity number into a dynasty valuation.
-- Every player result now reports `age`, `durability_score`, and the
-  age/durability multipliers actually applied, so a trade grade is auditable
-  instead of a black box.
+  (games_played history): position-specific age curves and a durability
+  (injury-proneness) proxy from recent games-played rate.
+- Positional replacement level ("scarcity") is computed on the same value
+  basis being scored (dynasty-adjusted pool for dynasty, raw projections for
+  redraft), instead of mixing a redraft-shaped scarcity number into a
+  dynasty valuation.
 
-Validation notes (2026-09-17, mock-trade check #1 -- within-position):
-- Sanity-checked against mock trades built from real, well-known players
-  within the same position. Caught a bug in the original RB age curve (flat
-  multiplier for "30 and up") and fixed it with finer breakpoints.
-
-Validation notes (2026-09-17, mock-trade check #2 -- cross-position):
-- Ran mock trades ACROSS positions and caught a formula bug (raw points
-  dominated over value-over-replacement). Fixed by making VOR the dominant
-  term: `value = floor_fraction*base + VOR`.
-
-Validation notes (2026-09-17, live-data check #3 -- duplicate pool entries):
-- Live trades still showed QBs scarcer than RBs/WRs even in plain 1QB
-  leagues. Root cause: the replacement pool merged the external projections
-  feed (PFR-style player_id) with a SQL fallback of real recent performance
-  (nflverse gsis_id) with NO deduplication, double-counting nearly every
-  player under two different ID strings. Fixed by deduplicating the pool by
-  normalized player NAME, preferring the external feed's projection and only
-  using the fallback to fill in players missing from the feed entirely.
-
-Validation notes (2026-09-17, live-data check #4 -- missing FLEX demand):
-- After the dedup fix, Josh Allen still edged Jaxon Smith-Njigba (WR4
-  overall, not a fringe player) by ~22.5% in 1QB redraft. ROSTER_STARTERS
-  never accounted for the FLEX roster slot, which in virtually every real
-  league draws additional demand from RB/WR/TE (QB is never flex-eligible in
-  standard formats), making the model's WR/RB replacement threshold shallower
-  than real roster construction implies. Updated RB/WR from 2.0 to 2.5
-  effective starters (one shared FLEX spot split between the two positions
-  that most commonly fill it). Verified against real data: JSN's gap to Allen
-  closes from +22.5% to +14.2% (still defensible -- Allen is the #1 overall
-  fantasy QB, JSN is very good but not top-tier), while a true elite WR1
-  (Ja'Marr Chase) now clearly leads Allen by +22%, matching real 1QB redraft
-  consensus that top-tier WRs are valued above even elite rushing QBs.
+Validation notes (2026-09-17, mock-trade + live-data debugging, chronological):
+1. Within-position mock trades caught a flat RB age-curve bug (fixed with
+   finer age breakpoints).
+2. Cross-position mock trades caught a formula bug where raw points
+   dominated over value-over-replacement (VOR); fixed by making VOR the
+   dominant term.
+3. Live server output caught duplicate-counting in the replacement pool: the
+   external feed (PFR-style IDs) and the SQL historical fallback (nflverse
+   gsis_id) were both counted for the same players under different ID
+   strings, artificially inflating RB/WR/TE replacement level far more than
+   QB's (since QB's curve is flat, losing half the pool depth barely moved
+   its replacement value; RB/WR/TE's steep curves moved a lot). Fixed by
+   deduplicating the pool by normalized player name.
+4. Live output still showed a real, elite-tier WR trailing an elite QB in
+   1QB redraft by ~22%. Root cause: ROSTER_STARTERS never accounted for the
+   FLEX roster slot (RB/WR-eligible in virtually every real league; QB never
+   is), making the WR/RB replacement threshold shallower than real roster
+   construction implies. Fixed by treating RB/WR as 2.5 effective starters
+   (one shared FLEX spot) instead of 2.0.
+5. Even after that fix, a real coefficient-of-variation analysis of the
+   startable tier at each position (QB CV=0.06 vs RB=0.19, WR=0.13, TE=0.12
+   in this league's real projections) confirmed the user's structural
+   critique: a single replacement-rank point doesn't capture how much
+   DEPTH/CLUSTERING exists within a position's startable range. QB's
+   startable tier is 3-10x more tightly clustered than the other positions,
+   meaning the practical difference between "the best QB" and "a good
+   enough QB" is much smaller than the raw points-above-replacement number
+   implies -- exactly the logic behind the standard "don't reach for QB"
+   redraft doctrine. Added a variance/depth multiplier (see
+   _position_depth_multipliers) that shrinks VOR for low-CV (deep) positions
+   and amplifies it for high-CV (scarce) positions, dampened by sqrt and
+   capped to [0.7, 1.3] so one season's noisy CV estimate can't swing values
+   wildly.
+6. Added a season-to-date performance-vs-expectation signal: if a player has
+   played enough games this season to be meaningful, their actual scoring
+   pace is blended into their value, so a player drastically over- or
+   under-performing their preseason projection gets nudged accordingly
+   instead of the model pretending the preseason number is still gospel.
+   NOTE: this requires `fantasy_scores_seasonal` to actually contain
+   up-to-date rows for the CURRENT season -- if the import job that
+   populates that table from nflverse hasn't been run recently, this signal
+   will simply be unavailable (returns None) rather than silently wrong.
 """
 
 import csv
 import io
+import math
 import os
 import re
 import urllib.request
@@ -82,14 +77,25 @@ PROJECTION_URL = os.getenv("TRADE_PROJECTIONS_URL", "").strip()
 POSITIONS_WITH_REPLACEMENT = ("QB", "RB", "WR", "TE")
 # Effective starters per 12-team roster, INCLUDING a share of the standard
 # single FLEX spot (RB/WR-eligible in the vast majority of real leagues; TE
-# and QB are left at their base starter counts since QB is never flex
-# -eligible in standard formats and TE-flex usage is comparatively rare).
+# and QB are left at their base starter counts).
 ROSTER_STARTERS = {"RB": 2.5, "WR": 2.5, "TE": 1}
 
 DEFAULT_ROOKIE_AGE = 22  # assumed age at rookie season when birth_date is missing
 SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
 
 FLOOR_FRACTION = {"redraft": 0.15, "dynasty": 0.10}
+
+# Depth-multiplier dampening/clamping (see _position_depth_multipliers).
+DEPTH_MULT_MIN = 0.7
+DEPTH_MULT_MAX = 1.3
+
+# Season-to-date performance-vs-expectation blending.
+CURRENT_SEASON = date.today().year
+SEASON_WEEKS = 17
+MIN_GAMES_FOR_PERFORMANCE_SIGNAL = 3
+PERFORMANCE_BLEND_WEIGHT = 0.25  # how much actual current-season pace nudges projected value
+PERFORMANCE_RATIO_MIN = 0.6
+PERFORMANCE_RATIO_MAX = 1.6
 
 AGE_CURVES = {
     "QB": [(23, 0.92), (27, 1.05), (32, 1.10), (35, 0.95), (38, 0.75), (None, 0.45)],
@@ -226,6 +232,44 @@ def _fetch_games_history(conn, player_ids):
     return history
 
 
+def _fetch_current_season_performance(conn, player_ids, scoring_format):
+    """Returns {player_id: (fantasy_points_so_far, games_played_so_far)} for
+    the current calendar-year NFL season, sourced from fantasy_scores_seasonal
+    (which is only as fresh as the last time the import job was run against
+    nflverse). Callers must treat a missing player_id as "no signal
+    available", not "player has 0 points".
+    """
+    if not player_ids:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT player_id, fantasy_points, games_played
+            FROM fantasy_scores_seasonal
+            WHERE player_id = ANY(%s) AND season = %s AND season_type = 'REG' AND format_id = %s
+            """,
+            (list(player_ids), CURRENT_SEASON, scoring_format),
+        )
+        return {row["player_id"]: (row["fantasy_points"], row["games_played"]) for row in cur.fetchall()}
+
+
+def _performance_ratio(actual_points, games_played, season_projection):
+    """Compares actual scoring pace this season to the preseason full-season
+    projection. Returns None (no adjustment) when there isn't enough signal
+    yet -- specifically fewer than MIN_GAMES_FOR_PERFORMANCE_SIGNAL games
+    played, or no usable projection to compare against. Clipped to avoid a
+    tiny early-season sample (e.g. one huge or one disastrous game) swinging
+    a player's trade value wildly.
+    """
+    if games_played is None or games_played < MIN_GAMES_FOR_PERFORMANCE_SIGNAL:
+        return None
+    if not season_projection or season_projection <= 0:
+        return None
+    pace = (actual_points or 0) / games_played * SEASON_WEEKS
+    ratio = pace / season_projection
+    return round(max(PERFORMANCE_RATIO_MIN, min(PERFORMANCE_RATIO_MAX, ratio)), 3)
+
+
 def _load_players(conn, player_ids, scoring_format, league_type, qb_format):
     if not player_ids:
         return {}, "No players supplied", {}
@@ -253,6 +297,7 @@ def _load_players(conn, player_ids, scoring_format, league_type, qb_format):
         identity = {row["player_id"]: dict(row) for row in cur.fetchall()}
 
     games_history = _fetch_games_history(conn, player_ids)
+    current_performance = _fetch_current_season_performance(conn, player_ids, scoring_format)
 
     external_by_name = {
         _projection_key(value.get("player_name") or value.get("display_name")): value
@@ -282,9 +327,19 @@ def _load_players(conn, player_ids, scoring_format, league_type, qb_format):
         age = _estimate_age(row.get("birth_date"), row.get("rookie_year"))
         durability_score = _durability_score(games_history.get(player_id, []))
 
+        actual_points, games_played_this_season = current_performance.get(player_id, (None, None))
+        performance_ratio = _performance_ratio(actual_points, games_played_this_season, projection)
+        if performance_ratio is not None:
+            projection_adjusted = projection * (1 - PERFORMANCE_BLEND_WEIGHT + PERFORMANCE_BLEND_WEIGHT * performance_ratio)
+        else:
+            projection_adjusted = projection
+
         result[player_id] = {
             **row,
             "projection": round(projection, 1),
+            "projection_adjusted": round(projection_adjusted, 1),
+            "performance_ratio": performance_ratio,
+            "games_played_this_season": games_played_this_season,
             "value_source": value_source,
             "age": age,
             "durability_score": durability_score,
@@ -331,14 +386,9 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
     the SAME value basis being scored: dynasty-adjusted for dynasty leagues,
     raw projections for redraft leagues.
 
-    The external feed and the SQL fallback below use two DIFFERENT,
-    INCOMPATIBLE player_id namespaces (PFR-style IDs in the feed vs.
-    nflverse gsis_id from the fallback query) for the same real players.
-    Naively concatenating both sources double-counts almost every rosterable
-    player. We deduplicate by normalized display NAME -- the only reliable
-    link between the two ID schemes -- always preferring the external feed's
-    value and only pulling from the fallback for players missing from the
-    feed entirely.
+    Deduplicates by normalized display NAME across the external feed
+    (PFR-style IDs) and the SQL fallback (nflverse gsis_id) -- see module
+    docstring item 3.
     """
     column = {
         "standard": "fantasy_pts_standard",
@@ -389,18 +439,71 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
     return pool
 
 
+def _roster_count_for(position, qb_format):
+    if position == "QB":
+        return 1 if qb_format == "one_qb" else 2
+    return ROSTER_STARTERS.get(position, 1)
+
+
 def _replacement_points(pool, position, qb_format):
     values = pool.get(position, [])
     if not values:
         return 0.0
-    if position == "QB":
-        roster_count = 1 if qb_format == "one_qb" else 2
-    else:
-        roster_count = ROSTER_STARTERS.get(position, 1)
+    roster_count = _roster_count_for(position, qb_format)
     # roster_count may be fractional (e.g. 2.5 to represent a shared FLEX
     # spot) -- round to the nearest whole roster slot before indexing.
     index = min(len(values) - 1, int(round(roster_count * 12)))
     return values[index]
+
+
+def _position_depth_multipliers(pool, qb_format):
+    """Computes a variance/depth-based multiplier per position, reflecting
+    how tightly clustered (deep/replaceable) vs. spread out (scarce) each
+    position's real STARTABLE tier is -- not just the single point at the
+    replacement rank.
+
+    Positions with a low coefficient of variation (stdev/mean) across their
+    startable tier are "deep": the difference between the best option and a
+    solidly-good option is small in practice, which is exactly the logic
+    behind the standard "don't reach for a QB" redraft doctrine, since a
+    12-team league's startable QB tier is historically far more tightly
+    clustered than RB/WR. High-CV positions are "scarce": the gap between
+    great and merely-good options is large and real.
+
+    The raw CV ratio is dampened with sqrt() and capped to
+    [DEPTH_MULT_MIN, DEPTH_MULT_MAX] so that a single season's noisy
+    estimate (especially early in a season, or for thin position pools)
+    can't swing trade values by an extreme amount.
+    """
+    coefficients = {}
+    for position in POSITIONS_WITH_REPLACEMENT:
+        values = pool.get(position, [])
+        if len(values) < 2:
+            continue
+        roster_count = _roster_count_for(position, qb_format)
+        tier_size = min(len(values), int(round(roster_count * 12)) + 1)
+        tier = values[:tier_size]
+        if len(tier) < 2:
+            continue
+        mean = sum(tier) / len(tier)
+        if mean <= 0:
+            continue
+        variance = sum((v - mean) ** 2 for v in tier) / len(tier)
+        coefficients[position] = (variance ** 0.5) / mean
+
+    if not coefficients:
+        return {position: 1.0 for position in POSITIONS_WITH_REPLACEMENT}
+
+    avg_cv = sum(coefficients.values()) / len(coefficients)
+    multipliers = {}
+    for position in POSITIONS_WITH_REPLACEMENT:
+        cv = coefficients.get(position)
+        if not cv or avg_cv <= 0:
+            multipliers[position] = 1.0
+            continue
+        raw_multiplier = math.sqrt(cv / avg_cv)
+        multipliers[position] = round(max(DEPTH_MULT_MIN, min(DEPTH_MULT_MAX, raw_multiplier)), 3)
+    return multipliers
 
 
 def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_format):
@@ -414,6 +517,7 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
         raise ValueError(f"Unknown player IDs: {', '.join(missing)}")
 
     replacement_pool = _position_value_pool(conn, external, scoring_format, league_type, qb_format)
+    depth_multipliers = _position_depth_multipliers(replacement_pool, qb_format)
     floor_fraction = FLOOR_FRACTION[league_type]
 
     details = []
@@ -423,22 +527,25 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
             position = player["position"]
             age = player["age"]
             durability_score = player["durability_score"]
+            projection = player["projection_adjusted"]
 
             if league_type == "dynasty":
                 base_value, age_mult, durability_mult = _dynasty_value_for(
-                    player["projection"], position, age, durability_score, qb_format
+                    projection, position, age, durability_score, qb_format
                 )
                 value_basis = "dynasty_age_durability_model"
             else:
                 age_mult = 1.0
                 durability_mult = _durability_multiplier(durability_score, "redraft")
-                base_value = player["projection"] * durability_mult
+                base_value = projection * durability_mult
                 value_basis = "redraft_projection_with_durability_haircut"
 
             replacement = _replacement_points(replacement_pool, position, qb_format)
             value_over_replacement = base_value - replacement
             if position == "QB" and qb_format == "superflex" and league_type != "dynasty":
                 value_over_replacement *= 1.35
+            depth_multiplier = depth_multipliers.get(position, 1.0)
+            value_over_replacement *= depth_multiplier
 
             value = floor_fraction * base_value + max(0.0, value_over_replacement)
 
@@ -448,10 +555,13 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
                 "display_name": player["display_name"],
                 "position": position,
                 "projection": player["projection"],
+                "performance_ratio": player["performance_ratio"],
+                "games_played_this_season": player["games_played_this_season"],
                 "age": age,
                 "durability_score": durability_score,
                 "age_multiplier": round(age_mult, 3) if league_type == "dynasty" else None,
                 "durability_multiplier": round(durability_mult, 3),
+                "depth_multiplier": depth_multiplier,
                 "replacement_level": round(replacement, 1),
                 "value_over_replacement": round(value_over_replacement, 1),
                 "trade_value": round(value, 1),
