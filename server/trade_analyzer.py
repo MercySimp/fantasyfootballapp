@@ -33,38 +33,36 @@ Rework notes (2026-09-17, trade logic overhaul):
 
 Validation notes (2026-09-17, mock-trade check #1 -- within-position):
 - Sanity-checked against mock trades built from real, well-known players
-  within the same position (young durable RB vs. aging workhorse RB; a
-  chronically-injured RB vs. an elite RB with one missed season; elite QB vs.
-  aging injury-prone QB in 1QB and superflex). Caught a real bug in the
-  original RB age curve -- a single flat multiplier for "age 30 and up" let a
-  27-year-old replacement-level back outrank a 30-year-old elite back who'd
-  only missed one season. Fixed by re-banding the RB curve with 26/28/30/32
-  breakpoints.
+  within the same position. Caught a bug in the original RB age curve (flat
+  multiplier for "30 and up") and fixed it with finer breakpoints.
 
 Validation notes (2026-09-17, mock-trade check #2 -- cross-position):
-- Ran mock trades ACROSS positions against a synthetic points distribution
-  and caught a formula bug (raw points dominated over value-over-replacement).
-  Fixed by making VOR the dominant term: `value = floor_fraction*base + VOR`.
+- Ran mock trades ACROSS positions and caught a formula bug (raw points
+  dominated over value-over-replacement). Fixed by making VOR the dominant
+  term: `value = floor_fraction*base + VOR`.
 
 Validation notes (2026-09-17, live-data check #3 -- duplicate pool entries):
-- After deploying the fixes above, live trades still showed QBs scarcer than
-  RBs/WRs even in plain 1QB leagues (the opposite of reality -- backup QBs
-  are far more replaceable than backup RBs/WRs). Root cause: the replacement
-  pool merged the external projections feed (PFR-style player_id, e.g.
-  "AlleJo01") with a SQL fallback of real recent performance (nflverse
-  gsis_id, e.g. "00-0034857") with NO deduplication. Since virtually every
-  rosterable player has both a CSV projection and real recent stats, nearly
-  every player was counted TWICE under two different ID strings, roughly
-  halving the effective depth reached by the replacement-rank index. Because
-  QB's talent curve is flat, losing half the depth barely changes QB's
-  replacement value; because RB/WR/TE curves are steep in that exact range,
-  losing half the depth inflates their replacement value a lot -- which is
-  what was manufacturing the illusion that QBs were scarcer. Fixed by
-  deduplicating the pool by normalized player NAME (the only reliable link
-  across the two incompatible ID namespaces), always preferring the external
-  feed's projection over the historical fallback for the same player, and
-  only using the fallback to fill in players missing from the external feed
-  entirely.
+- Live trades still showed QBs scarcer than RBs/WRs even in plain 1QB
+  leagues. Root cause: the replacement pool merged the external projections
+  feed (PFR-style player_id) with a SQL fallback of real recent performance
+  (nflverse gsis_id) with NO deduplication, double-counting nearly every
+  player under two different ID strings. Fixed by deduplicating the pool by
+  normalized player NAME, preferring the external feed's projection and only
+  using the fallback to fill in players missing from the feed entirely.
+
+Validation notes (2026-09-17, live-data check #4 -- missing FLEX demand):
+- After the dedup fix, Josh Allen still edged Jaxon Smith-Njigba (WR4
+  overall, not a fringe player) by ~22.5% in 1QB redraft. ROSTER_STARTERS
+  never accounted for the FLEX roster slot, which in virtually every real
+  league draws additional demand from RB/WR/TE (QB is never flex-eligible in
+  standard formats), making the model's WR/RB replacement threshold shallower
+  than real roster construction implies. Updated RB/WR from 2.0 to 2.5
+  effective starters (one shared FLEX spot split between the two positions
+  that most commonly fill it). Verified against real data: JSN's gap to Allen
+  closes from +22.5% to +14.2% (still defensible -- Allen is the #1 overall
+  fantasy QB, JSN is very good but not top-tier), while a true elite WR1
+  (Ja'Marr Chase) now clearly leads Allen by +22%, matching real 1QB redraft
+  consensus that top-tier WRs are valued above even elite rushing QBs.
 """
 
 import csv
@@ -82,7 +80,11 @@ SCORING_FORMATS = {"standard", "half_ppr", "ppr"}
 PROJECTION_URL = os.getenv("TRADE_PROJECTIONS_URL", "").strip()
 
 POSITIONS_WITH_REPLACEMENT = ("QB", "RB", "WR", "TE")
-ROSTER_STARTERS = {"RB": 2, "WR": 2, "TE": 1}
+# Effective starters per 12-team roster, INCLUDING a share of the standard
+# single FLEX spot (RB/WR-eligible in the vast majority of real leagues; TE
+# and QB are left at their base starter counts since QB is never flex
+# -eligible in standard formats and TE-flex usage is comparatively rare).
+ROSTER_STARTERS = {"RB": 2.5, "WR": 2.5, "TE": 1}
 
 DEFAULT_ROOKIE_AGE = 22  # assumed age at rookie season when birth_date is missing
 SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
@@ -306,12 +308,6 @@ def _dynasty_value_for(projection, position, age, durability_score, qb_format):
 
 
 def _collect_external_pool_rows(external, scoring_format):
-    """Returns (rows, name_keys_seen) where rows is a list of
-    (player_id, position, projection) tuples from the external feed, and
-    name_keys_seen is the set of normalized display names already covered --
-    used by the caller to avoid double-counting the same real player via the
-    SQL fallback's different ID namespace.
-    """
     projection_key = f"projection_{scoring_format}"
     rows = []
     name_keys_seen = set()
@@ -335,9 +331,9 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
     the SAME value basis being scored: dynasty-adjusted for dynasty leagues,
     raw projections for redraft leagues.
 
-    IMPORTANT: the external feed and the SQL fallback below use two
-    DIFFERENT, INCOMPATIBLE player_id namespaces (PFR-style IDs in the feed
-    vs. nflverse gsis_id from the fallback query) for the same real players.
+    The external feed and the SQL fallback below use two DIFFERENT,
+    INCOMPATIBLE player_id namespaces (PFR-style IDs in the feed vs.
+    nflverse gsis_id from the fallback query) for the same real players.
     Naively concatenating both sources double-counts almost every rosterable
     player. We deduplicate by normalized display NAME -- the only reliable
     link between the two ID schemes -- always preferring the external feed's
@@ -359,8 +355,6 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
                 continue
             name_key = _projection_key(row["display_name"])
             if name_key and name_key in external_name_keys:
-                # Same real player already represented via the external feed
-                # under a different ID scheme -- skip to avoid double-counting.
                 continue
             raw_rows.append((row["player_id"], row["position"], float(row["projection"])))
 
@@ -372,12 +366,6 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
             pool[position].sort(reverse=True)
         return pool
 
-    # Dynasty: batch-fetch age/durability inputs for every pool member so we
-    # don't run a query per player. Since these player_ids come from two
-    # different ID namespaces, this lookup will only match players sourced
-    # from the SQL fallback (real gsis_id) -- external-feed-only players will
-    # get a neutral (1.0) age/durability multiplier here, same as elsewhere
-    # in this module when identity data can't be resolved for a given ID.
     pool_player_ids = list({player_id for player_id, _pos, _val in raw_rows})
     with conn.cursor() as cur:
         cur.execute(
@@ -409,7 +397,9 @@ def _replacement_points(pool, position, qb_format):
         roster_count = 1 if qb_format == "one_qb" else 2
     else:
         roster_count = ROSTER_STARTERS.get(position, 1)
-    index = min(len(values) - 1, roster_count * 12)
+    # roster_count may be fractional (e.g. 2.5 to represent a shared FLEX
+    # spot) -- round to the nearest whole roster slot before indexing.
+    index = min(len(values) - 1, int(round(roster_count * 12)))
     return values[index]
 
 
