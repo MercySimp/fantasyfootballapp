@@ -30,6 +30,18 @@ Rework notes (2026-09-17, trade logic overhaul):
 - Every player result now reports `age`, `durability_score`, and the
   age/durability multipliers actually applied, so a trade grade is auditable
   instead of a black box.
+
+Validation notes (2026-09-17, mock-trade check):
+- Before shipping, this file was sanity-checked against several mock trades
+  built from real, well-known players (e.g. a young durable RB vs. an aging
+  workhorse RB; a chronically-injured RB vs. an elite RB coming off a single
+  missed season; an elite QB vs. an aging injury-prone QB in both 1QB and
+  superflex). That check caught a real bug in the original RB age curve: it
+  had a single flat multiplier for "age 30 and up", which let a 27-year-old
+  replacement-level running back outrank a 30-year-old elite back who'd only
+  missed one season. The RB curve below was re-banded (added 26/28/30/32
+  breakpoints) specifically to fix that ordering while keeping the RB
+  "dead zone" cliff intact for players in their mid-30s.
 """
 
 import csv
@@ -59,7 +71,7 @@ SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
 # hardest, QBs decline latest) -- not a scientific or league-specific model.
 AGE_CURVES = {
     "QB": [(23, 0.92), (27, 1.05), (32, 1.10), (35, 0.95), (38, 0.75), (None, 0.45)],
-    "RB": [(22, 1.05), (25, 1.10), (27, 0.85), (29, 0.55), (None, 0.30)],
+    "RB": [(22, 1.05), (24, 1.10), (26, 1.00), (28, 0.75), (30, 0.55), (32, 0.35), (None, 0.20)],
     "WR": [(23, 1.05), (28, 1.10), (31, 0.90), (34, 0.65), (None, 0.40)],
     "TE": [(24, 0.95), (29, 1.10), (32, 0.90), (35, 0.65), (None, 0.40)],
 }
