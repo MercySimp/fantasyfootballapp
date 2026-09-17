@@ -42,25 +42,29 @@ Validation notes (2026-09-17, mock-trade check #1 -- within-position):
   breakpoints.
 
 Validation notes (2026-09-17, mock-trade check #2 -- cross-position):
-- Ran mock trades ACROSS positions (elite QB vs. elite WR, elite QB vs. elite
-  RB, elite RB vs. elite WR, elite TE vs. replacement-tier WR) against a
-  synthetic league-wide points distribution shaped like real NFL scoring
-  depth (QBs have a much shallower talent dropoff than RB/WR/TE, since only
-  ~32 QBs play meaningful snaps while committees and injuries create much
-  deeper usable RB/WR pools). This caught a second, more fundamental bug: the
-  value formula was `full_raw_points + 20% of value-over-replacement`, so raw
-  point totals dominated and positional scarcity was only ever a minor
-  tiebreaker. That let a 340-point QB (Josh Allen) outvalue a 250-point WR
-  (Ja'Marr Chase) by ~24%, when real dynasty/redraft consensus has elite WRs
-  valued at or above elite QBs in 1QB leagues precisely because backup QBs
-  are so much more replaceable than backup WRs.
-  Fixed by flipping the weighting so value-over-replacement (VOR) is the
-  dominant term and only a small flat fraction of raw production is kept as
-  an intrinsic floor: `value = floor_fraction * base + max(0, VOR)`. After
-  the fix, the same Allen-vs-Chase pair now correctly flips sides depending
-  on format: Chase grades ahead of Allen in 1QB, but Allen grades well ahead
-  of Chase in superflex, using the identical two players -- which is exactly
-  the behavior a real trade analyzer should produce.
+- Ran mock trades ACROSS positions against a synthetic points distribution
+  and caught a formula bug (raw points dominated over value-over-replacement).
+  Fixed by making VOR the dominant term: `value = floor_fraction*base + VOR`.
+
+Validation notes (2026-09-17, live-data check #3 -- duplicate pool entries):
+- After deploying the fixes above, live trades still showed QBs scarcer than
+  RBs/WRs even in plain 1QB leagues (the opposite of reality -- backup QBs
+  are far more replaceable than backup RBs/WRs). Root cause: the replacement
+  pool merged the external projections feed (PFR-style player_id, e.g.
+  "AlleJo01") with a SQL fallback of real recent performance (nflverse
+  gsis_id, e.g. "00-0034857") with NO deduplication. Since virtually every
+  rosterable player has both a CSV projection and real recent stats, nearly
+  every player was counted TWICE under two different ID strings, roughly
+  halving the effective depth reached by the replacement-rank index. Because
+  QB's talent curve is flat, losing half the depth barely changes QB's
+  replacement value; because RB/WR/TE curves are steep in that exact range,
+  losing half the depth inflates their replacement value a lot -- which is
+  what was manufacturing the illusion that QBs were scarcer. Fixed by
+  deduplicating the pool by normalized player NAME (the only reliable link
+  across the two incompatible ID namespaces), always preferring the external
+  feed's projection over the historical fallback for the same player, and
+  only using the fallback to fill in players missing from the external feed
+  entirely.
 """
 
 import csv
@@ -83,21 +87,8 @@ ROSTER_STARTERS = {"RB": 2, "WR": 2, "TE": 1}
 DEFAULT_ROOKIE_AGE = 22  # assumed age at rookie season when birth_date is missing
 SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
 
-# Fraction of a player's raw (age/durability-adjusted) production kept as an
-# intrinsic "floor" value regardless of positional scarcity, so a below
-# -replacement player still has some non-zero bench/stash value. The rest of
-# trade value comes from value-over-replacement (VOR) -- this is what makes
-# scarcity the DOMINANT factor in cross-position comparisons instead of a
-# minor tiebreaker on top of raw points. Dynasty uses a smaller floor because
-# long-term asset value should lean even more on "is this player actually
-# hard to replace" than redraft does.
 FLOOR_FRACTION = {"redraft": 0.15, "dynasty": 0.10}
 
-# Position aging curves used for DYNASTY value only. Each entry is
-# (max_age, multiplier); bands are evaluated in order and the last band
-# (max_age=None) covers everyone older than every prior band. These are
-# simplified, publicly-known dynasty heuristics (RBs decline earliest and
-# hardest, QBs decline latest) -- not a scientific or league-specific model.
 AGE_CURVES = {
     "QB": [(23, 0.92), (27, 1.05), (32, 1.10), (35, 0.95), (38, 0.75), (None, 0.45)],
     "RB": [(22, 1.05), (24, 1.10), (26, 1.00), (28, 0.75), (30, 0.55), (32, 0.35), (None, 0.20)],
@@ -191,13 +182,6 @@ def _estimate_age(birth_date, rookie_year):
 
 
 def _durability_score(games_history):
-    """games_history: list of (season, games_played) tuples, most recent
-    first. Returns a 0..1 recency-weighted average games-played rate, used as
-    an injury-proneness proxy since this schema has no injury-report table.
-    Returns None when there's no season history at all (e.g. an incoming
-    rookie who hasn't played a season yet) so callers can avoid penalizing
-    players we simply have no data on.
-    """
     if not games_history:
         return None
     weights = (0.5, 0.3, 0.2)
@@ -321,25 +305,16 @@ def _dynasty_value_for(projection, position, age, durability_score, qb_format):
     return value, age_mult, durability_mult
 
 
-def _position_value_pool(conn, external, scoring_format, league_type, qb_format):
-    """League-wide pool used purely for replacement-level scarcity, built on
-    the SAME value basis being scored: dynasty-adjusted for dynasty leagues,
-    raw projections for redraft leagues.
+def _collect_external_pool_rows(external, scoring_format):
+    """Returns (rows, name_keys_seen) where rows is a list of
+    (player_id, position, projection) tuples from the external feed, and
+    name_keys_seen is the set of normalized display names already covered --
+    used by the caller to avoid double-counting the same real player via the
+    SQL fallback's different ID namespace.
     """
-    column = {
-        "standard": "fantasy_pts_standard",
-        "half_ppr": "fantasy_pts_half_ppr",
-        "ppr": "fantasy_pts_ppr",
-    }[scoring_format]
-
-    raw_rows = []  # (player_id, position, projection)
-    with conn.cursor() as cur:
-        cur.execute(_fallback_query(column))
-        for row in cur.fetchall():
-            if row["position"] and row["projection"] is not None:
-                raw_rows.append((row["player_id"], row["position"], float(row["projection"])))
-
     projection_key = f"projection_{scoring_format}"
+    rows = []
+    name_keys_seen = set()
     for player_id, row in external.items():
         position = str(row.get("position") or "").upper()
         if position not in POSITIONS_WITH_REPLACEMENT:
@@ -348,7 +323,46 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
             value = float(row.get(projection_key) or "")
         except (TypeError, ValueError):
             continue
-        raw_rows.append((player_id, position, value))
+        rows.append((player_id, position, value))
+        name_key = _projection_key(row.get("player_name") or row.get("display_name"))
+        if name_key:
+            name_keys_seen.add(name_key)
+    return rows, name_keys_seen
+
+
+def _position_value_pool(conn, external, scoring_format, league_type, qb_format):
+    """League-wide pool used purely for replacement-level scarcity, built on
+    the SAME value basis being scored: dynasty-adjusted for dynasty leagues,
+    raw projections for redraft leagues.
+
+    IMPORTANT: the external feed and the SQL fallback below use two
+    DIFFERENT, INCOMPATIBLE player_id namespaces (PFR-style IDs in the feed
+    vs. nflverse gsis_id from the fallback query) for the same real players.
+    Naively concatenating both sources double-counts almost every rosterable
+    player. We deduplicate by normalized display NAME -- the only reliable
+    link between the two ID schemes -- always preferring the external feed's
+    value and only pulling from the fallback for players missing from the
+    feed entirely.
+    """
+    column = {
+        "standard": "fantasy_pts_standard",
+        "half_ppr": "fantasy_pts_half_ppr",
+        "ppr": "fantasy_pts_ppr",
+    }[scoring_format]
+
+    raw_rows, external_name_keys = _collect_external_pool_rows(external, scoring_format)
+
+    with conn.cursor() as cur:
+        cur.execute(_fallback_query(column))
+        for row in cur.fetchall():
+            if not row["position"] or row["projection"] is None:
+                continue
+            name_key = _projection_key(row["display_name"])
+            if name_key and name_key in external_name_keys:
+                # Same real player already represented via the external feed
+                # under a different ID scheme -- skip to avoid double-counting.
+                continue
+            raw_rows.append((row["player_id"], row["position"], float(row["projection"])))
 
     pool = defaultdict(list)
     if league_type != "dynasty":
@@ -359,7 +373,11 @@ def _position_value_pool(conn, external, scoring_format, league_type, qb_format)
         return pool
 
     # Dynasty: batch-fetch age/durability inputs for every pool member so we
-    # don't run a query per player.
+    # don't run a query per player. Since these player_ids come from two
+    # different ID namespaces, this lookup will only match players sourced
+    # from the SQL fallback (real gsis_id) -- external-feed-only players will
+    # get a neutral (1.0) age/durability multiplier here, same as elsewhere
+    # in this module when identity data can't be resolved for a given ID.
     pool_player_ids = list({player_id for player_id, _pos, _val in raw_rows})
     with conn.cursor() as cur:
         cur.execute(
@@ -430,14 +448,8 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
             replacement = _replacement_points(replacement_pool, position, qb_format)
             value_over_replacement = base_value - replacement
             if position == "QB" and qb_format == "superflex" and league_type != "dynasty":
-                # Dynasty QBs already receive the superflex premium inside
-                # _dynasty_value_for(); redraft QBs get the VOR boost here.
                 value_over_replacement *= 1.35
 
-            # Value-over-replacement is the DOMINANT term (see FLOOR_FRACTION
-            # docstring above) -- this is what makes positional scarcity
-            # actually reshape cross-position comparisons instead of being a
-            # minor tiebreaker layered on top of raw points.
             value = floor_fraction * base_value + max(0.0, value_over_replacement)
 
             details.append({
