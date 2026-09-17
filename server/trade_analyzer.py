@@ -5,22 +5,31 @@ player_id, projection_standard, projection_half_ppr, projection_ppr, dynasty_val
 and optionally display_name, position. Without it, the analyzer uses a clearly
 labelled weighted projection from the three most recent loaded seasons.
 
-Fix notes (2026-09-17 review):
-- Positional "replacement level" is now computed from the full available
-  projection pool (external feed + recent-performance fallback) instead of
-  only the players present in the trade being evaluated. Previously the
-  scarcity bonus was an artifact of which players a user happened to include
-  in the trade, not a real market baseline.
-- Dynasty value now falls back to an age/experience-adjusted estimate when
-  the external feed has no dynasty_value populated (which is currently the
-  case for every row in data/projections.csv), instead of silently reusing
-  the raw season projection with no adjustment at all.
-- Every player's value now reports a `value_source` so the API/UI can show
-  whether a number came from the external feed, the recent-performance
-  fallback, or an estimated dynasty adjustment.
-- The accept/decline verdict is now based on the percentage difference
-  relative to trade size instead of a flat point threshold, so it scales
-  sensibly across scoring formats and league types.
+Rework notes (2026-09-17, trade logic overhaul):
+- Dynasty and redraft now diverge based on real signals pulled from the
+  `players` table (birth_date / rookie_year) and `player_stats_seasonal`
+  (games_played history), not just a copy of the season projection:
+    * Age: converted to a position-specific aging-curve multiplier. RBs are
+      discounted hardest starting in their mid/late 20s (the well-known "RB
+      dead zone"), while QBs retain value the longest.
+    * Durability: the average games-played rate over each player's most
+      recent seasons on record is used as an injury-proneness proxy. There is
+      no injury-report table in this schema, so recent per-season
+      availability is the closest real signal available. Low durability
+      discounts dynasty value more heavily than redraft value, since a
+      single missed season matters far more to a multi-year dynasty asset
+      than to a one-year redraft asset.
+    * Superflex: on top of the existing QB replacement-level widening (2
+      starters counted instead of 1), dynasty QB value gets an additional
+      premium in superflex leagues to reflect the much longer runway teams
+      get from a good starting QB when every roster needs two.
+- Positional replacement level ("scarcity") is now computed on the same
+  value basis being scored: a dynasty-adjusted pool (age + durability) for
+  dynasty leagues, or a raw-projection pool for redraft leagues -- instead of
+  mixing a redraft-shaped scarcity number into a dynasty valuation.
+- Every player result now reports `age`, `durability_score`, and the
+  age/durability multipliers actually applied, so a trade grade is auditable
+  instead of a black box.
 """
 
 import csv
@@ -39,6 +48,21 @@ PROJECTION_URL = os.getenv("TRADE_PROJECTIONS_URL", "").strip()
 
 POSITIONS_WITH_REPLACEMENT = ("QB", "RB", "WR", "TE")
 ROSTER_STARTERS = {"RB": 2, "WR": 2, "TE": 1}
+
+DEFAULT_ROOKIE_AGE = 22  # assumed age at rookie season when birth_date is missing
+SUPERFLEX_QB_DYNASTY_PREMIUM = 1.15
+
+# Position aging curves used for DYNASTY value only. Each entry is
+# (max_age, multiplier); bands are evaluated in order and the last band
+# (max_age=None) covers everyone older than every prior band. These are
+# simplified, publicly-known dynasty heuristics (RBs decline earliest and
+# hardest, QBs decline latest) -- not a scientific or league-specific model.
+AGE_CURVES = {
+    "QB": [(23, 0.92), (27, 1.05), (32, 1.10), (35, 0.95), (38, 0.75), (None, 0.45)],
+    "RB": [(22, 1.05), (25, 1.10), (27, 0.85), (29, 0.55), (None, 0.30)],
+    "WR": [(23, 1.05), (28, 1.10), (31, 0.90), (34, 0.65), (None, 0.40)],
+    "TE": [(24, 0.95), (29, 1.10), (32, 0.90), (35, 0.65), (None, 0.40)],
+}
 
 
 def _external_projections():
@@ -98,25 +122,84 @@ def _fallback_query(scoring_column):
     """
 
 
-def _dynasty_age_adjustment(rookie_year):
-    if not rookie_year:
+def _age_multiplier(position, age):
+    curve = AGE_CURVES.get(position)
+    if not curve or age is None:
         return 1.0
-    try:
-        experience = date.today().year - int(rookie_year)
-    except (TypeError, ValueError):
-        return 1.0
-    if experience <= 1:
-        return 1.25
-    if experience <= 3:
-        return 1.1
-    if experience <= 6:
-        return 1.0
-    if experience <= 9:
-        return 0.85
-    return 0.6
+    for max_age, multiplier in curve:
+        if max_age is None or age <= max_age:
+            return multiplier
+    return curve[-1][1]
 
 
-def _load_players(conn, player_ids, scoring_format):
+def _estimate_age(birth_date, rookie_year):
+    today = date.today()
+    if birth_date:
+        try:
+            born = birth_date if hasattr(birth_date, "year") else date.fromisoformat(str(birth_date))
+            had_birthday = (today.month, today.day) >= (born.month, born.day)
+            return today.year - born.year - (0 if had_birthday else 1)
+        except (TypeError, ValueError):
+            pass
+    if rookie_year:
+        try:
+            return (today.year - int(rookie_year)) + DEFAULT_ROOKIE_AGE
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def _durability_score(games_history):
+    """games_history: list of (season, games_played) tuples, most recent
+    first. Returns a 0..1 recency-weighted average games-played rate, used as
+    an injury-proneness proxy since this schema has no injury-report table.
+    Returns None when there's no season history at all (e.g. an incoming
+    rookie who hasn't played a season yet) so callers can avoid penalizing
+    players we simply have no data on.
+    """
+    if not games_history:
+        return None
+    weights = (0.5, 0.3, 0.2)
+    weighted_rate, total_weight = 0.0, 0.0
+    for (season, games_played), weight in zip(games_history[:3], weights):
+        denom = 16 if season and season < 2021 else 17
+        rate = max(0.0, min(1.0, (games_played or 0) / denom))
+        weighted_rate += rate * weight
+        total_weight += weight
+    if total_weight == 0:
+        return None
+    return round(weighted_rate / total_weight, 3)
+
+
+def _durability_multiplier(durability_score, league_type):
+    if durability_score is None:
+        return 1.0
+    if league_type == "dynasty":
+        return round(0.6 + 0.4 * durability_score, 3)
+    return round(0.85 + 0.15 * durability_score, 3)
+
+
+def _fetch_games_history(conn, player_ids):
+    if not player_ids:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT player_id, season, games_played
+            FROM player_stats_seasonal
+            WHERE player_id = ANY(%s) AND season_type = 'REG'
+            ORDER BY player_id, season DESC
+            """,
+            (list(player_ids),),
+        )
+        rows = cur.fetchall()
+    history = defaultdict(list)
+    for row in rows:
+        history[row["player_id"]].append((row["season"], row["games_played"]))
+    return history
+
+
+def _load_players(conn, player_ids, scoring_format, league_type, qb_format):
     if not player_ids:
         return {}, "No players supplied", {}
     column = {
@@ -131,7 +214,6 @@ def _load_players(conn, player_ids, scoring_format):
             external = _external_projections()
         except (OSError, ValueError) as exc:
             external_error = str(exc)
-    result = {}
     with conn.cursor() as cur:
         cur.execute(_fallback_query(column))
         fallback_rows = [dict(row) for row in cur.fetchall()]
@@ -142,11 +224,15 @@ def _load_players(conn, player_ids, scoring_format):
             (list(player_ids),),
         )
         identity = {row["player_id"]: dict(row) for row in cur.fetchall()}
+
+    games_history = _fetch_games_history(conn, player_ids)
+
     external_by_name = {
         _projection_key(value.get("player_name") or value.get("display_name")): value
         for value in external.values()
         if value.get("player_name") or value.get("display_name")
     }
+    result = {}
     for player_id in player_ids:
         row = identity.get(player_id)
         if not row:
@@ -155,7 +241,6 @@ def _load_players(conn, player_ids, scoring_format):
         base = fallback.get(player_id, {})
         projection_key = f"projection_{scoring_format}"
         projection = None
-        dynasty_value = None
         value_source = "recent_performance_fallback"
         if source:
             try:
@@ -163,25 +248,19 @@ def _load_players(conn, player_ids, scoring_format):
                 value_source = "external_feed"
             except (TypeError, ValueError):
                 projection = None
-            try:
-                dynasty_value = float(source.get("dynasty_value") or "")
-            except (TypeError, ValueError):
-                dynasty_value = None
         projection = projection if projection is not None else float(base.get("projection") or 0)
         if value_source == "recent_performance_fallback" and projection == 0:
             value_source = "no_data"
 
-        dynasty_source = "external_feed"
-        if dynasty_value is None:
-            dynasty_value = round(projection * _dynasty_age_adjustment(row.get("rookie_year")), 1)
-            dynasty_source = "estimated_age_adjusted"
+        age = _estimate_age(row.get("birth_date"), row.get("rookie_year"))
+        durability_score = _durability_score(games_history.get(player_id, []))
 
         result[player_id] = {
             **row,
             "projection": round(projection, 1),
-            "dynasty_value": round(dynasty_value, 1),
             "value_source": value_source,
-            "dynasty_value_source": dynasty_source,
+            "age": age,
+            "durability_score": durability_score,
         }
     if external:
         overall_source = "Configured projection feed"
@@ -192,23 +271,35 @@ def _load_players(conn, player_ids, scoring_format):
     return result, overall_source, external
 
 
-def _position_replacement_pool(conn, external, scoring_format):
+def _dynasty_value_for(projection, position, age, durability_score, qb_format):
+    age_mult = _age_multiplier(position, age)
+    durability_mult = _durability_multiplier(durability_score, "dynasty")
+    value = projection * age_mult * durability_mult
+    if position == "QB" and qb_format == "superflex":
+        value *= SUPERFLEX_QB_DYNASTY_PREMIUM
+    return value, age_mult, durability_mult
+
+
+def _position_value_pool(conn, external, scoring_format, league_type, qb_format):
+    """League-wide pool used purely for replacement-level scarcity, built on
+    the SAME value basis being scored: dynasty-adjusted for dynasty leagues,
+    raw projections for redraft leagues.
+    """
     column = {
         "standard": "fantasy_pts_standard",
         "half_ppr": "fantasy_pts_half_ppr",
         "ppr": "fantasy_pts_ppr",
     }[scoring_format]
-    pool = defaultdict(list)
+
+    raw_rows = []  # (player_id, position, projection)
     with conn.cursor() as cur:
         cur.execute(_fallback_query(column))
         for row in cur.fetchall():
-            position = row["position"]
-            projection = row["projection"]
-            if position and projection is not None:
-                pool[position].append(float(projection))
+            if row["position"] and row["projection"] is not None:
+                raw_rows.append((row["player_id"], row["position"], float(row["projection"])))
 
     projection_key = f"projection_{scoring_format}"
-    for row in external.values():
+    for player_id, row in external.items():
         position = str(row.get("position") or "").upper()
         if position not in POSITIONS_WITH_REPLACEMENT:
             continue
@@ -216,7 +307,35 @@ def _position_replacement_pool(conn, external, scoring_format):
             value = float(row.get(projection_key) or "")
         except (TypeError, ValueError):
             continue
-        pool[position].append(value)
+        raw_rows.append((player_id, position, value))
+
+    pool = defaultdict(list)
+    if league_type != "dynasty":
+        for _player_id, position, projection in raw_rows:
+            pool[position].append(projection)
+        for position in pool:
+            pool[position].sort(reverse=True)
+        return pool
+
+    # Dynasty: batch-fetch age/durability inputs for every pool member so we
+    # don't run a query per player.
+    pool_player_ids = list({player_id for player_id, _pos, _val in raw_rows})
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_id, birth_date, rookie_year FROM players WHERE player_id = ANY(%s)",
+            (pool_player_ids,),
+        )
+        identity = {row["player_id"]: dict(row) for row in cur.fetchall()}
+    games_history = _fetch_games_history(conn, pool_player_ids)
+
+    for player_id, position, projection in raw_rows:
+        identity_row = identity.get(player_id, {})
+        age = _estimate_age(identity_row.get("birth_date"), identity_row.get("rookie_year"))
+        durability_score = _durability_score(games_history.get(player_id, []))
+        dynasty_value, _age_mult, _dur_mult = _dynasty_value_for(
+            projection, position, age, durability_score, qb_format
+        )
+        pool[position].append(dynasty_value)
 
     for position in pool:
         pool[position].sort(reverse=True)
@@ -240,34 +359,56 @@ def analyze(conn, received_ids, offered_ids, league_type, qb_format, scoring_for
     qb_format = qb_format if qb_format in QB_FORMATS else "one_qb"
     scoring_format = scoring_format if scoring_format in SCORING_FORMATS else "ppr"
     player_ids = set(received_ids) | set(offered_ids)
-    players, source, external = _load_players(conn, player_ids, scoring_format)
+    players, source, external = _load_players(conn, player_ids, scoring_format, league_type, qb_format)
     missing = sorted(player_ids - set(players))
     if missing:
         raise ValueError(f"Unknown player IDs: {', '.join(missing)}")
 
-    replacement_pool = _position_replacement_pool(conn, external, scoring_format)
+    replacement_pool = _position_value_pool(conn, external, scoring_format, league_type, qb_format)
 
     details = []
     for side, ids in (("receiving", received_ids), ("offering", offered_ids)):
         for player_id in ids:
             player = players[player_id]
             position = player["position"]
+            age = player["age"]
+            durability_score = player["durability_score"]
+
+            if league_type == "dynasty":
+                base_value, age_mult, durability_mult = _dynasty_value_for(
+                    player["projection"], position, age, durability_score, qb_format
+                )
+                value_basis = "dynasty_age_durability_model"
+            else:
+                age_mult = 1.0
+                durability_mult = _durability_multiplier(durability_score, "redraft")
+                base_value = player["projection"] * durability_mult
+                value_basis = "redraft_projection_with_durability_haircut"
+
             replacement = _replacement_points(replacement_pool, position, qb_format)
-            scarcity = player["projection"] - replacement
-            if position == "QB" and qb_format == "superflex":
+            scarcity = base_value - replacement
+            if position == "QB" and qb_format == "superflex" and league_type != "dynasty":
+                # Dynasty QBs already receive the superflex premium inside
+                # _dynasty_value_for(); redraft QBs get the scarcity boost here.
                 scarcity *= 1.35
-            base_value = player["dynasty_value"] if league_type == "dynasty" else player["projection"]
-            value = max(0.0, base_value + max(0.0, scarcity) * (0.35 if league_type == "dynasty" else 0.2))
+
+            scarcity_weight = 0.35 if league_type == "dynasty" else 0.2
+            value = max(0.0, base_value + max(0.0, scarcity) * scarcity_weight)
+
             details.append({
                 "side": side,
                 "player_id": player_id,
                 "display_name": player["display_name"],
                 "position": position,
                 "projection": player["projection"],
+                "age": age,
+                "durability_score": durability_score,
+                "age_multiplier": round(age_mult, 3) if league_type == "dynasty" else None,
+                "durability_multiplier": round(durability_mult, 3),
                 "positional_value": round(scarcity, 1),
                 "trade_value": round(value, 1),
                 "value_source": player["value_source"],
-                "dynasty_value_source": player["dynasty_value_source"] if league_type == "dynasty" else None,
+                "value_basis": value_basis,
             })
     received = sum(p["trade_value"] for p in details if p["side"] == "receiving")
     offered = sum(p["trade_value"] for p in details if p["side"] == "offering")
