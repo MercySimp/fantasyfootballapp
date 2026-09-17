@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Set up Stat Darts</title><link rel="stylesheet" href="/static/games.css"></head>
+<body>
+  <main class="setup-shell">
+    <div class="eyebrow">DRAFTFORGE / STAT DARTS</div>
+    <h1>Set up your board.</h1>
+    <p class="lead">Choose how you want to play. The prompt is generated once and stays fixed for the entire game.</p>
+    <div class="setup-card">
+      <div class="step-label">Game type</div>
+      <div class="choice-row">
+        <button class="choice active" data-mode="solo"><strong>Solo</strong><span>Play against the board.</span></button>
+        <button class="choice" data-mode="multiplayer"><strong>Multiplayer</strong><span>Create a room and invite friends.</span></button>
+      </div>
+      <div class="nav-row">
+        <a class="secondary-button" href="/">Back</a>
+        <button class="primary-button" id="continue-button">Continue</button>
+      </div>
+      <div class="error" id="error"></div>
+    </div>
+  </main>
+  <script>
+    let mode = "solo";
+    document.querySelectorAll(".choice").forEach((button) => button.addEventListener("click", () => {
+      mode = button.dataset.mode;
+      document.querySelectorAll(".choice").forEach((item) => item.classList.toggle("active", item === button));
+    }));
+    document.getElementById("continue-button").addEventListener("click", () => {
+      window.location.href = mode === "solo" ? "/static/darts-board.html?solo=1" : "/static/darts-lobby.html";
+    });
+  </script>
+</body>
+</html>

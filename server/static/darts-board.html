@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stat Darts Board</title><link rel="stylesheet" href="/static/games.css">
+<style>
+:root {
+  --bg: #061f2a;
+  --panel: #0b3041;
+  --panel-2: #123e56;
+  --panel-3: #0a2b3b;
+  --line: #174b65;
+  --text: #f5f7f8;
+  --muted: #aebbc2;
+  --blue: #159ddd;
+  --blue-dark: #0b789f;
+  --pink: #ff5b78;
+  --pink-dark: #9b4058;
+  --purple: #8b48dc;
+  --silver: #d8dde0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+               "Segoe UI", sans-serif;
+}
+
+body.darts-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(22, 111, 151, .13), transparent 45%),
+    var(--bg);
+}
+
+.darts-board-shell {
+  width: min(100%, 1420px);
+  margin: 0 auto;
+  padding: 62px 14px 12px;
+}
+
+.darts-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 0 0 22px;
+}
+
+.darts-kicker,
+.starting-label {
+  color: #7fc2e3;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.darts-title {
+  margin: 20px 0 0;
+  font-size: clamp(32px, 4vw, 53px);
+  line-height: .98;
+  letter-spacing: -.025em;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.starting-label {
+  text-align: right;
+  margin-top: 3px;
+}
+
+.starting-number {
+  margin-top: 18px;
+  color: #159ddd;
+  font-size: clamp(76px, 8vw, 112px);
+  line-height: .78;
+  font-weight: 950;
+  letter-spacing: -.07em;
+  text-align: right;
+}
+
+/* The screenshot uses a single horizontal control row under the title. */
+.prompt-strip {
+  display: grid;
+  grid-template-columns: 240px 300px minmax(260px, 1fr) 160px 105px 95px;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.prompt-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 60px;
+  padding: 0 28px;
+  background: var(--pink);
+  color: #160c12;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  clip-path: polygon(6% 0, 100% 0, 94% 100%, 0 100%);
+}
+
+.turn-chip,
+.answer-input,
+.year-select,
+.throw-button,
+.pass-button {
+  min-height: 60px;
+  border: 1px solid #0c4a65;
+  border-radius: 6px;
+  background: #092b3c;
+  color: var(--text);
+  font: inherit;
+}
+
+.turn-chip {
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-size: 16px;
+  font-weight: 850;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.answer-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.answer-input {
+  width: 100%;
+  height: 60px;
+  padding: 0 18px 0 52px;
+  outline: none;
+  font-size: 16px;
+  font-weight: 650;
+  background:
+    linear-gradient(transparent, transparent),
+    #092b3c;
+}
+
+.answer-input::placeholder {
+  color: #70838d;
+}
+
+.answer-input:focus {
+  border-color: #187fac;
+  box-shadow: 0 0 0 2px rgba(21, 157, 221, .12);
+}
+
+/* Magnifying glass without adding an asset. */
+.answer-wrap::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 20px;
+  top: 19px;
+  width: 12px;
+  height: 12px;
+  border: 3px solid #7b929d;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.answer-wrap::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 33px;
+  top: 34px;
+  width: 8px;
+  height: 3px;
+  background: #7b929d;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.year-select {
+  width: 100%;
+  padding: 0 14px;
+  font-weight: 750;
+  color: #b7c1c6;
+  outline: none;
+}
+
+.throw-button,
+.pass-button {
+  cursor: pointer;
+  border-color: transparent;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.throw-button {
+  background: #a84860;
+  color: #ffdce3;
+}
+
+.throw-button:not(:disabled):hover {
+  background: #bd526b;
+}
+
+.pass-button {
+  background: #0b3041;
+  border-color: #174d67;
+  color: #dce5e8;
+}
+
+.throw-button:disabled,
+.pass-button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.board-message {
+  min-height: 18px;
+  margin: 0 2px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* Scoreboard */
+.darts-columns {
+  display: grid;
+  grid-template-columns: 88px repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  align-items: stretch;
+}
+
+.round-rail {
+  display: grid;
+  grid-template-rows: 84px 83px repeat(5, minmax(58px, 1fr));
+  gap: 7px;
+}
+
+.round-spacer,
+.round-cell {
+  background: #092b3c;
+  border: 1px solid #0e3b51;
+}
+
+.round-spacer {
+  background: transparent;
+  border-color: transparent;
+}
+
+.round-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.round-cell.current {
+  color: var(--pink);
+  border-color: #a7445e;
+}
+
+.player-column {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 84px 83px auto;
+  background: #082a3a;
+  border: 1px solid #0e3c52;
+}
+
+.player-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  background: #123e56;
+  border-bottom: 3px solid var(--blue);
+}
+
+.player-header h2 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.player-header p {
+  margin: 3px 0 0;
+  color: #9eb0b9;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.player-header::before {
+  content: attr(data-initial);
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--blue);
+  border-radius: 50%;
+  color: var(--blue);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.player-column:nth-child(2) .player-header::before { border-color: var(--blue); color: var(--blue); }
+.player-column:nth-child(3) .player-header::before { border-color: var(--pink); color: var(--pink); }
+.player-column:nth-child(4) .player-header::before { border-color: var(--silver); color: var(--silver); }
+.player-column:nth-child(5) .player-header::before { border-color: var(--purple); color: var(--purple); }
+
+.remaining {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: #222a33;
+  border-bottom: 1px solid #3a3740;
+}
+
+.remaining span {
+  color: #858e95;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.remaining strong {
+  font-size: 29px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.history {
+  display: grid;
+  grid-auto-rows: 83px;
+  gap: 7px;
+  background: #082a3a;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px;
+  background: #123e56;
+  border-left: 3px solid var(--blue);
+}
+
+.history-row > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-row b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+}
+
+.history-row small {
+  margin-top: 4px;
+  color: #aebbc2;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.history-row > b:last-child {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  background: #0a2d40;
+  font-size: 16px;
+}
+
+.history-row.bust {
+  border-left-color: var(--pink);
+}
+
+.answer-results {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  display: none;
+  overflow: hidden;
+  border: 1px solid #15506b;
+  border-radius: 5px;
+  background: #092b3c;
+  box-shadow: 0 15px 30px rgba(0,0,0,.35);
+}
+
+.answer-results.open { display: block; }
+
+.answer-result {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 15px;
+  border: 0;
+  border-bottom: 1px solid #123f54;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.answer-result:hover { background: #123e56; }
+.answer-result strong { font-size: 14px; }
+.answer-result span,
+.answer-no-results { color: #93a6af; font-size: 12px; }
+.answer-no-results { padding: 14px; }
+
+@media (max-width: 1050px) {
+  .prompt-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .answer-wrap { grid-column: 1 / -1; }
+  .pass-button { grid-column: auto; }
+  .darts-columns {
+    grid-template-columns: 56px repeat(4, minmax(180px, 1fr));
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .darts-board-shell { padding-top: 28px; }
+  .darts-topline { flex-direction: column; }
+  .starting-label,
+  .starting-number { text-align: left; }
+  .prompt-strip { grid-template-columns: 1fr; }
+  .answer-wrap { grid-column: auto; }
+}
+</style>
+</head>
+<body class="darts-page">
+  <main class="darts-board-shell">
+    <div class="darts-topline">
+      <div><div class="darts-kicker" id="round-label">BOARD 1 OF 1 · ROUND 1</div><h1 class="darts-title" id="prompt-title">Loading prompt…</h1></div>
+      <div><div class="starting-label">STARTING NUMBER</div><div class="starting-number" id="starting-number">—</div></div>
+    </div>
+    <div class="prompt-strip">
+      <div class="prompt-chip" id="prompt-type">SINGLE SEASON</div>
+      <div class="turn-chip" id="turn-label">UNC IS ON THE CLOCK</div>
+      <div class="answer-wrap">
+        <input class="answer-input" id="answer" placeholder="Search for a player, UNC..." autocomplete="off">
+        <div class="answer-results" id="answer-results"></div>
+      </div>
+      <select class="year-select" id="year" aria-label="Select year">
+        <option value="">Select Year</option>
+      </select>
+      <button class="throw-button" id="throw">LOCK IN</button>
+      <button class="pass-button" id="pass" type="button">PASS</button>
+    </div>
+    <div class="board-message" id="message"></div>
+    <section class="darts-columns" id="columns"></section>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const solo = params.get("solo") === "1";
+    const roomCode = params.get("room");
+    const host = params.get("host") === "1";
+    const name = sessionStorage.getItem("dartsName") || `Player ${Math.floor(Math.random() * 999)}`;
+    let socket = null;
+    let state = null;
+    let soloGameId = null;
+    let searchTimer = null;
+    const $ = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
+
+    function showMessage(text, error = false) { $("message").textContent = text; $("message").style.color = error ? "#ff7894" : ""; }
+    async function searchPlayers(query) {
+      const results = $("answer-results");
+      if (query.length < 2) { results.classList.remove("open"); results.innerHTML = ""; return; }
+      try {
+        const response = await fetch(`/api/players/search?q=${encodeURIComponent(query)}`);
+        const players = await response.json();
+        results.innerHTML = players.length
+          ? players.map((player) => `<button class="answer-result" type="button" data-name="${escapeHtml(player.display_name)}"><strong>${escapeHtml(player.display_name)}</strong><span>${escapeHtml(player.position)} · ${escapeHtml(player.years_label)} · ${escapeHtml(player.teams_label)}</span></button>`).join("")
+          : `<div class="answer-no-results">No player matches</div>`;
+        results.querySelectorAll(".answer-result").forEach((item) => item.addEventListener("click", () => {
+          $("answer").value = item.dataset.name;
+          results.classList.remove("open");
+          $("answer").focus();
+        }));
+        results.classList.add("open");
+      } catch (error) {
+        results.classList.remove("open");
+      }
+    }
+    function playerRows() {
+      if (solo) return [{display_name: "You", remaining: state.remaining, is_host: true}];
+      return state.players || [];
+    }
+    function render() {
+      if (!state) return;
+
+      $("prompt-title").textContent = state.prompt?.title || state.title || "NFC WEST — RUSH ATTEMPTS";
+      $("starting-number").textContent = Number(state.start_score || 0).toLocaleString();
+
+      const statLabel = state.prompt?.stat_label || state.stat_label || "SINGLE SEASON";
+      $("prompt-type").textContent = statLabel;
+
+      $("round-label").textContent = roomCode
+        ? `BOARD 1 OF 1 · ROOM ${roomCode}`
+        : `BOARD 1 OF 1 · ROUND ${state.round || 1}`;
+
+      $("turn-label").textContent = solo
+        ? "YOU ARE ON THE CLOCK"
+        : `${state.current_player || "Waiting"} IS ON THE CLOCK`;
+
+      const canAct = solo
+        ? state.status === "playing"
+        : (state.status === "waiting"
+          ? host
+          : state.status === "playing" && state.current_player === name);
+
+      $("throw").disabled = !canAct;
+      $("pass").disabled = !canAct;
+
+      // Populate the year selector when the backend provides years.
+      const yearSelect = $("year");
+      const years = state.prompt?.years || state.years || [];
+      if (years.length && yearSelect.options.length === 1) {
+        years.forEach((year) => {
+          const option = document.createElement("option");
+          option.value = year;
+          option.textContent = year;
+          yearSelect.appendChild(option);
+        });
+      }
+
+      const players = playerRows().slice(0, 4);
+      while (players.length < 4) {
+        players.push({display_name: "Waiting", remaining: state.start_score || 0, connected: false});
+      }
+
+      const roundCount = Math.max(5, state.rounds || 5);
+      const historyByPlayer = (player) =>
+        (state.history || []).filter((item) => item.display_name === player.display_name);
+
+      const roundRail = `
+        <div class="round-rail">
+          <div class="round-spacer"></div>
+          <div class="round-cell">REMAINING</div>
+          ${Array.from({length: roundCount}, (_, i) =>
+            `<div class="round-cell${i === (state.round || 1) - 1 ? " current" : ""}">R${i + 1}</div>`
+          ).join("")}
+        </div>`;
+
+      const columns = players.map((player, index) => {
+        const history = historyByPlayer(player);
+        const initial = escapeHtml((player.display_name || "?").charAt(0).toUpperCase());
+
+        return `
+          <article class="player-column">
+            <header class="player-header" data-initial="${initial}">
+              <div>
+                <h2>${escapeHtml(player.display_name)}</h2>
+                <p>${player.connected === false ? "Offline" : (player.is_host ? "Host" : "Player")}</p>
+              </div>
+            </header>
+            <div class="remaining">
+              <span>${index === 0 ? "Remaining" : ""}</span>
+              <strong>${Number(player.remaining ?? state.remaining ?? state.start_score ?? 0).toLocaleString()}</strong>
+            </div>
+            <div class="history">
+              ${Array.from({length: roundCount}, (_, i) => {
+                const item = history[i];
+                if (!item) return `<div class="history-row" aria-hidden="true"></div>`;
+                return `
+                  <div class="history-row${item.bust ? " bust" : ""}">
+                    <span>
+                      <b>${escapeHtml(item.player)}</b>
+                      <small>${item.bust ? "Bust" : "Career answer"}</small>
+                    </span>
+                    <b>${item.bust ? "+" : "-"}${Number(item.value).toLocaleString()}</b>
+                  </div>`;
+              }).join("")}
+            </div>
+          </article>`;
+      }).join("");
+
+      $("columns").innerHTML = roundRail + columns;
+
+      if (!solo && host && state.status === "waiting") {
+        $("turn-label").textContent = "LOBBY READY — HOST CAN START";
+        $("throw").textContent = "START GAME";
+      } else {
+        $("throw").textContent = "LOCK IN";
+      }
+    }
+
+    async function startSolo() {
+      const response = await fetch("/api/darts/start", {method: "POST"});
+      state = await response.json();
+      if (!response.ok) throw new Error(state.detail || "Could not start game");
+      soloGameId = state.game_id; render(); showMessage(`Top 25 qualifying answers create the ${Number(state.start_score).toLocaleString()} starting number.`);
+    }
+    function connectRoom() {
+      socket = new WebSocket(`${location.origin.replace(/^http/, "ws")}/ws/darts/${encodeURIComponent(roomCode)}?display_name=${encodeURIComponent(name)}`);
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === "error") { showMessage(message.message, true); return; }
+        if (message.room) { state = message.room; render(); }
+        if (message.type === "answer_rejected") showMessage(message.reason, true);
+        if (message.type === "game_complete") showMessage(`Checkout! ${state.winner} wins.`, false);
+      };
+      socket.onclose = () => showMessage("Connection closed.", true);
+    }
+    async function submit() {
+      const answer = $("answer").value.trim();
+      if (!answer) return;
+      if (solo) {
+        const response = await fetch(`/api/darts/${soloGameId}/answer`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({answer})});
+        const result = await response.json(); state = result;
+        if (!response.ok) showMessage(result.detail || "Answer failed", true);
+        else if (!result.valid) showMessage(result.reason, true);
+        else showMessage(result.answer.bust ? `${result.answer.player} busts — score stays put.` : `${result.answer.player} removes ${result.answer.value.toLocaleString()}.`);
+        render();
+      } else socket.send(JSON.stringify({type:"submit_answer", answer}));
+      $("answer").value = ""; $("answer").focus();
+    }
+    $("pass").addEventListener("click", () => { $("answer").focus(); });
+    $("throw").addEventListener("click", () => {
+      if (!solo && state?.status === "waiting" && host) socket.send(JSON.stringify({type:"start_game"}));
+      else submit();
+    });
+    $("answer").addEventListener("keydown", (event) => { if (event.key === "Enter") submit(); });
+    $("answer").addEventListener("input", (event) => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => searchPlayers(event.target.value.trim()), 180);
+    });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".answer-wrap")) $("answer-results").classList.remove("open");
+    });
+    (async () => { try { if (solo) await startSolo(); else { const response = await fetch(`/api/darts/rooms/${encodeURIComponent(roomCode)}`); state = await response.json(); render(); connectRoom(); } } catch (error) { showMessage(error.message, true); } })();
+  </script>
+</body>
+</html>

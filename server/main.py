@@ -7,7 +7,7 @@ from typing import List, Optional
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,9 +15,13 @@ from pydantic import BaseModel
 
 from rules import CATALOG
 import dynamic_rules
+import darts_game
 import pick_engine
 import question_engine
 import rooms
+import trade_analyzer
+import projections_fetcher
+import threading
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -75,9 +79,79 @@ class CreateRoomRequest(BaseModel):
     name_train: bool = False
 
 
+class CreateDartsRoomRequest(BaseModel):
+    is_public: bool = False
+
+
+class DartsJoinRequest(BaseModel):
+    display_name: str
+
+
+class TradeAnalyzeRequest(BaseModel):
+    received_player_ids: List[str] = []
+    offered_player_ids: List[str] = []
+    league_type: str = "redraft"
+    qb_format: str = "one_qb"
+    scoring_format: str = "ppr"
+
+
 @app.get("/api/draft/slots")
 def get_slots():
     return SLOT_ORDER
+
+
+@app.get("/api/trade/options")
+def trade_options():
+    return {
+        "league_types": [
+            {"key": "redraft", "label": "Redraft"},
+            {"key": "dynasty", "label": "Dynasty"},
+        ],
+        "qb_formats": [
+            {"key": "one_qb", "label": "1 QB"},
+            {"key": "superflex", "label": "Superflex"},
+        ],
+        "scoring_formats": [
+            {"key": "standard", "label": "Standard"},
+            {"key": "half_ppr", "label": "Half PPR"},
+            {"key": "ppr", "label": "PPR"},
+        ],
+    }
+
+
+@app.post("/api/trade/analyze")
+def analyze_trade(request: TradeAnalyzeRequest):
+    if not request.received_player_ids or not request.offered_player_ids:
+        raise HTTPException(400, "Add at least one player to both sides of the trade")
+    if len(request.received_player_ids) > 10 or len(request.offered_player_ids) > 10:
+        raise HTTPException(400, "Each side can contain at most 10 players")
+    try:
+        with get_conn() as conn:
+            return trade_analyzer.analyze(
+                conn,
+                list(dict.fromkeys(request.received_player_ids)),
+                list(dict.fromkeys(request.offered_player_ids)),
+                request.league_type,
+                request.qb_format,
+                request.scoring_format,
+            )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/trade/upload-projections")
+async def upload_projections(file: UploadFile = File(...)):
+    """Upload a projections CSV and save it to data/projections.csv for the analyzer to use.
+
+    Expected CSV columns: player_id, projection_standard, projection_half_ppr, projection_ppr, dynasty_value
+    """
+    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    os.makedirs(data_dir, exist_ok=True)
+    dest = os.path.join(data_dir, "projections.csv")
+    content = await file.read()
+    with open(dest, "wb") as fh:
+        fh.write(content)
+    return {"status": "ok", "saved_path": dest}
 
 
 @app.get("/api/draft/difficulty-options")
@@ -205,6 +279,252 @@ def player_seasons(player_id: str, position: Optional[str] = None):
     if not rows:
         raise HTTPException(404, "No eligible seasonal data found for this player")
     return rows
+
+
+@app.post("/api/darts/start")
+def start_darts_game():
+    with get_conn() as conn:
+        try:
+            return darts_game.start_game(conn)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+
+@app.post("/api/darts/{game_id}/answer")
+def answer_darts_game(game_id: str, payload: dict):
+    answer = str(payload.get("answer", "")).strip()
+    with get_conn() as conn:
+        try:
+            return darts_game.submit_answer(conn, game_id, answer)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+
+@app.post("/api/darts/rooms")
+def create_darts_room(request: CreateDartsRoomRequest):
+    with get_conn() as conn:
+        try:
+            room = darts_game.create_room(conn, request.is_public)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+    return darts_game._room_public_state(room)
+
+
+@app.get("/api/darts/rooms")
+def public_darts_rooms():
+    return darts_game.list_public_rooms()
+
+
+@app.get("/api/darts/rooms/{code}")
+def darts_room_info(code: str):
+    room = darts_game.get_room(code)
+    if not room:
+        raise HTTPException(404, "Darts room not found")
+    return darts_game._room_public_state(room)
+
+
+@app.post("/api/trade/fetch-projections")
+def api_fetch_projections():
+    """Trigger an immediate fetch of FootballGuys CSV projections (anonymous attempt).
+    Saves normalized CSV to data/projections.csv and returns status."""
+    try:
+        data_dir = os.path.join(os.path.dirname(__file__), "data")
+        os.makedirs(data_dir, exist_ok=True)
+        dest = os.path.join(data_dir, "projections.csv")
+        result = projections_fetcher.fetch_and_save(dest_path=dest)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+    if not result.get("ok"):
+        raise HTTPException(500, result.get("error") or "Unknown failure")
+    return result
+
+
+@app.on_event("startup")
+def schedule_projections_fetcher():
+    # Start a background thread that attempts a fetch weekly and keeps running.
+    def _bg():
+        try:
+            # run a fetch immediately once, then periodic
+            data_dir = os.path.join(os.path.dirname(__file__), "data")
+            os.makedirs(data_dir, exist_ok=True)
+            dest = os.path.join(data_dir, "projections.csv")
+            projections_fetcher.fetch_and_save(dest_path=dest)
+        except Exception as exc:
+            print(f"[startup projections] initial fetch failed: {exc}")
+        # spawn the long-running periodic fetcher
+        t = threading.Thread(target=projections_fetcher.periodic_fetcher, kwargs={"interval_seconds": 7*24*3600}, daemon=True)
+        t.start()
+
+    thread = threading.Thread(target=_bg, daemon=True)
+    thread.start()
+
+
+@app.post("/api/darts/rooms/{code}/join")
+def join_darts_room(code: str, request: DartsJoinRequest):
+    try:
+        room = darts_game.join_room(code, request.display_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return darts_game._room_public_state(room)
+
+
+@app.websocket("/ws/darts/{code}")
+async def darts_socket(websocket: WebSocket, code: str, display_name: str = Query(...)):
+    await websocket.accept()
+    try:
+        room = darts_game.join_room(code, display_name, websocket)
+    except ValueError as exc:
+        await websocket.send_json({"type": "error", "message": str(exc)})
+        await websocket.close()
+        return
+
+    async def broadcast(message_type="room_state", extra=None):
+        payload = {"type": message_type, "room": darts_game._room_public_state(room)}
+        if extra:
+            payload.update(extra)
+        for participant in room["players"].values():
+            if participant["connected"] and participant.get("websocket"):
+                try:
+                    await participant["websocket"].send_json(payload)
+                except Exception:
+                    participant["connected"] = False
+
+    await broadcast("room_state")
+    try:
+        while True:
+            message = await websocket.receive_json()
+            message_type = message.get("type")
+            if message_type == "start_game":
+                try:
+                    darts_game.start_room(room, display_name)
+                except ValueError as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc)})
+                    continue
+                await broadcast("game_started")
+            elif message_type == "submit_answer":
+                try:
+                    with get_conn() as conn:
+                        result = darts_game.submit_room_answer(
+                            conn, room, display_name, str(message.get("answer", ""))
+                        )
+                except ValueError as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc)})
+                    continue
+                if not result["valid"]:
+                    await websocket.send_json({"type": "answer_rejected", **result})
+                else:
+                    await broadcast("answer_result", {"answer": result["answer"]})
+                    if room["status"] == "won":
+                        await broadcast("game_complete")
+            elif message_type == "get_state":
+                await websocket.send_json({"type": "room_state", "room": darts_game._room_public_state(room)})
+            else:
+                await websocket.send_json({"type": "error", "message": "Unknown darts message type"})
+    except WebSocketDisconnect:
+        darts_game.leave_room(room, display_name)
+        await broadcast("room_state")
+
+
+@app.get("/api/draft/pick/top-alternatives")
+def get_top_alternatives(
+    rule_id: str = Query(...),
+    position: str = Query(...),
+    scoring_format: str = Query("ppr"),
+    limit: int = Query(5),
+):
+    """Return top 5 alternative picks for a given question."""
+    if scoring_format not in VALID_FORMATS:
+        scoring_format = "ppr"
+    if limit < 1 or limit > 10:
+        limit = 5
+
+    if rule_id == "name_train":
+        points_column = pick_engine.POINTS_COLUMN.get(scoring_format, "fantasy_pts_ppr")
+        with get_conn() as conn, conn.cursor() as cur:
+            if position == "ANY":
+                cur.execute(
+                    f"""
+                    SELECT display_name, season, team, position, {points_column} AS fantasy_points
+                    FROM trivia_player_seasons
+                    ORDER BY {points_column} DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT display_name, season, team, position, {points_column} AS fantasy_points
+                    FROM trivia_player_seasons
+                    WHERE position = %s
+                    ORDER BY {points_column} DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (position, limit),
+                )
+            rows = cur.fetchall()
+        return [
+            {
+                "player": row["display_name"],
+                "season": row["season"],
+                "team": row["team"],
+                "position": row["position"],
+                "fantasy_points": row["fantasy_points"],
+            }
+            for row in rows
+        ]
+
+    is_dynamic = rule_id.startswith("dyn|")
+    if is_dynamic:
+        dynamic_parts = rule_id.split("|")
+        dynamic_category = dynamic_parts[1] if len(dynamic_parts) > 1 else ""
+        if dynamic_category == "collegematch":
+            raise HTTPException(400, "Top alternatives unavailable for college-match questions")
+        rule = None
+    else:
+        rule = pick_engine.get_rule(rule_id)
+        if not rule:
+            raise HTTPException(400, f"Unknown rule: {rule_id}")
+
+    if rule and rule["category"] == "COLLEGE_MATCH":
+        raise HTTPException(400, "Top alternatives unavailable for college questions")
+
+    points_column = pick_engine.POINTS_COLUMN.get(scoring_format, "fantasy_pts_ppr")
+    if is_dynamic:
+        sql, sql_params, id_mode = dynamic_rules.build_dynamic_pool_query(rule_id, position)
+    else:
+        sql, sql_params, id_mode = pick_engine.build_pool_query(rule, position)
+    if not sql or sql_params is None:
+        raise HTTPException(400, f"Top alternatives unavailable for rule: {rule_id}")
+
+    with get_conn() as conn, conn.cursor() as cur:
+        pool_join = (
+            "pool.player_id = s.player_id AND pool.season = s.season"
+            if id_mode == "season"
+            else "pool.player_id = s.player_id"
+        )
+        full_sql = f"""
+            SELECT p.display_name, s.season, s.team,
+                   s.{points_column} AS fantasy_points
+            FROM trivia_player_seasons s
+            JOIN players p ON p.player_id = s.player_id
+            JOIN ({sql}) pool ON {pool_join}
+            ORDER BY s.{points_column} DESC NULLS LAST
+            LIMIT %s
+        """
+        params = list(sql_params) + [limit]
+        cur.execute(full_sql, params)
+        rows = cur.fetchall()
+
+    return [
+        {
+            "player": row["display_name"],
+            "season": row["season"],
+            "team": row["team"],
+            "fantasy_points": row["fantasy_points"],
+        }
+        for row in rows
+    ]
 
 
 @app.post("/api/draft/pick")

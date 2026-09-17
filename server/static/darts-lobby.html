@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stat Darts Lobby</title><link rel="stylesheet" href="/static/games.css"></head>
+<body>
+  <main class="lobby-shell">
+    <div class="eyebrow">DRAFTFORGE / MULTIPLAYER LOBBY</div>
+    <h1>Invite your crew.</h1>
+    <p class="lead">Create a room, share the code, then start when everyone is ready.</p>
+    <div class="lobby-card">
+      <label class="select-label" for="name">Display name</label>
+      <input class="text-input" id="name" maxlength="40" placeholder="e.g. Mo">
+      <label class="select-label" for="code">Join an existing room</label>
+      <input class="text-input" id="code" maxlength="5" placeholder="Room code (optional)">
+      <div class="nav-row">
+        <a class="secondary-button" href="/static/darts-setup.html">Back</a>
+        <button class="primary-button" id="create">Create room</button>
+      </div>
+      <div class="error" id="error"></div>
+    </div>
+  </main>
+  <script>
+    document.getElementById("create").addEventListener("click", async () => {
+      const name = document.getElementById("name").value.trim();
+      const error = document.getElementById("error");
+      if (!name) { error.textContent = "Enter a display name."; return; }
+      try {
+        const code = document.getElementById("code").value.trim().toUpperCase();
+        if (code) {
+          const roomResponse = await fetch(`/api/darts/rooms/${encodeURIComponent(code)}`);
+          const room = await roomResponse.json();
+          if (!roomResponse.ok) throw new Error(room.detail || "Room not found");
+          sessionStorage.setItem("dartsName", name);
+          window.location.href = `/static/darts-board.html?room=${encodeURIComponent(room.code)}`;
+          return;
+        }
+        const response = await fetch("/api/darts/rooms", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({is_public: false}) });
+        const room = await response.json();
+        if (!response.ok) throw new Error(room.detail || "Could not create room");
+        sessionStorage.setItem("dartsName", name);
+        window.location.href = code
+          ? `/static/darts-board.html?room=${encodeURIComponent(code)}`
+          : `/static/darts-board.html?room=${encodeURIComponent(room.code)}&host=1`;
+      } catch (e) { error.textContent = e.message; }
+    });
+  </script>
+</body>
+</html>

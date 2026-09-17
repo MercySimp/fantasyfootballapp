@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DraftForge — Fantasy Trivia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+      --text-2xl: clamp(2rem, 1.2rem + 2.5vw, 3.5rem);
+      --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem;
+      --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem; --space-16: 4rem;
+      --radius-sm: .375rem; --radius-md: .5rem; --radius-lg: .75rem; --radius-xl: 1rem; --radius-full: 9999px;
+      --color-bg: #08131c; --color-surface: #0d1b25; --color-border: #20394d;
+      --color-text: #eef4fb; --color-text-muted: #8ea5ba; --color-primary: #27a3d6;
+      --color-success: #37c98f; --color-error: #f56454;
+      --diff-easy: #37c98f; --diff-medium: #ffcc56; --diff-hard: #f56454;
+      --shadow-lg: 0 20px 48px rgba(0,0,0,0.38);
+      --font-display: 'Archivo', 'Inter', sans-serif; --font-body: 'Inter', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100dvh; font-family: var(--font-body); font-size: var(--text-base); color: var(--color-text);
+      background: radial-gradient(circle at top, rgba(39,163,214,0.12), transparent 30%), linear-gradient(180deg, #08131c, #071018);
+    }
+    img, svg { display:block; max-width:100%; }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; border: 0; }
+    .app { max-width: 1440px; margin: 0 auto; padding: var(--space-8) var(--space-4) var(--space-16); }
+    .shell {
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 28px; overflow: hidden;
+      background: linear-gradient(180deg, rgba(13,27,37,0.92), rgba(7,16,24,0.98)); box-shadow: var(--shadow-lg);
+    }
+    .hero { position: relative; padding: var(--space-10) var(--space-8) var(--space-8); border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .hero-inner { max-width: 920px; margin: 0 auto; text-align: center; }
+    .logo { display:inline-flex; align-items:center; gap: var(--space-3); margin-bottom: var(--space-6); color:#8ad6ff; }
+    .logo svg { width: 28px; height: 28px; }
+    .badge-row { display: flex; gap: var(--space-3); justify-content: center; flex-wrap: wrap; align-items: center; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: var(--space-2); padding: .55rem 1rem; border-radius: var(--radius-full);
+      background: rgba(117,74,136,0.28); color: #f2d9ff; border: 1px solid rgba(255,255,255,0.1);
+      font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase;
+    }
+    .diff-badge { display:inline-flex; align-items:center; gap:.4rem; padding: .55rem 1rem; border-radius: var(--radius-full);
+      font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; border: 1px solid rgba(255,255,255,0.1); }
+    .diff-badge.easy { background: rgba(55,201,143,0.18); color: var(--diff-easy); }
+    .diff-badge.medium { background: rgba(255,204,86,0.16); color: var(--diff-medium); }
+    .diff-badge.hard { background: rgba(245,100,84,0.18); color: var(--diff-hard); }
+    .diff-badge.dynamic { background: rgba(185,166,255,0.16); color: #b9a6ff; }
+    .diff-badge.college { background: rgba(111,227,255,0.16); color: #6fe3ff; }
+    .timer-badge { display:inline-flex; align-items:center; gap:.4rem; padding: .55rem 1rem; border-radius: var(--radius-full);
+      font-family: var(--font-display); font-weight: 700; font-size: var(--text-sm); border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04); color: var(--color-text); min-width: 64px; justify-content: center; }
+    .timer-badge.warning { background: rgba(255,204,86,0.16); color: var(--diff-medium); border-color: rgba(255,204,86,0.3); }
+    .timer-badge.critical { background: rgba(245,100,84,0.2); color: var(--diff-hard); border-color: rgba(245,100,84,0.4); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .hero h1 { font-family: var(--font-display); font-size: var(--text-2xl); line-height: 1.05; margin-top: var(--space-5); }
+    .rule { margin-top: var(--space-6); padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
+      background: rgba(15,28,40,0.78); border: 1px solid rgba(255,255,255,0.08); color: var(--color-text-muted); }
+
+    .on-clock-banner { margin-top: var(--space-5); padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
+      background: linear-gradient(90deg, rgba(39,163,214,0.22), rgba(111,227,255,0.12)); border: 1px solid rgba(111,227,255,0.4);
+      font-family: var(--font-display); font-weight: 700; font-size: var(--text-base); display: none; }
+    .on-clock-banner.show { display: block; }
+    .on-clock-banner.you { background: linear-gradient(90deg, rgba(55,201,143,0.25), rgba(55,201,143,0.1)); border-color: rgba(55,201,143,0.5); color: #a9e6cc; }
+
+    .turn-order-strip { display: flex; gap: var(--space-2); justify-content: center; margin-top: var(--space-4); flex-wrap: wrap; }
+    .turn-avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center;
+      font-family: var(--font-display); font-weight: 700; font-size: var(--text-xs); border: 2px solid transparent; opacity: 0.55; }
+    .turn-avatar.active { opacity: 1; border-color: #6fe3ff; background: linear-gradient(135deg, #3e8cff, #6fe3ff); box-shadow: 0 0 0 3px rgba(111,227,255,0.25); }
+    .turn-avatar.done { opacity: 0.35; }
+
+    .waiting-note { margin-top: var(--space-4); padding: var(--space-3) var(--space-5); border-radius: var(--radius-lg);
+      background: rgba(255,204,86,0.1); border: 1px solid rgba(255,204,86,0.3); color: #ffcc56; font-size: var(--text-sm); display: none; }
+    .waiting-note.show { display: block; }
+
+    .result-banner {
+      margin-top: var(--space-6); padding: var(--space-6); border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, rgba(20,67,96,0.6), rgba(11,42,63,0.7));
+      border: 1px solid rgba(73,196,255,0.35); display: none; text-align: left;
+    }
+    .result-banner.show { display: block; }
+    .result-banner.invalid { background: linear-gradient(180deg, rgba(96,30,30,0.55), rgba(63,17,17,0.7)); border-color: rgba(245,84,84,0.4); }
+    .result-banner.penalized { background: linear-gradient(180deg, rgba(96,60,10,0.55), rgba(63,38,7,0.7)); border-color: rgba(255,204,86,0.4); }
+    .result-top { display:flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap; }
+    .result-player { font-family: var(--font-display); font-size: var(--text-lg); }
+    .result-sub { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: 2px; }
+    .grade-pill { display:inline-flex; align-items:center; gap: var(--space-2); padding: .5rem 1rem; border-radius: var(--radius-full);
+      font-family: var(--font-display); font-weight: 700; font-size: var(--text-sm); white-space: nowrap; }
+    .result-stats { display:flex; gap: var(--space-6); margin-top: var(--space-4); flex-wrap: wrap; }
+    .stat-block { text-align: center; }
+    .stat-block .val { font-family: var(--font-display); font-size: 1.9rem; line-height: 1; }
+    .stat-block .val.pts { color: #6fe3ff; }
+    .stat-block .val.rank { color: #ffcc56; }
+    .stat-block .val.pctile { color: #b9a6ff; }
+    .stat-block .lbl { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); margin-top: 4px; }
+    .grade-message { margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--color-text-muted); font-size: var(--text-sm); }
+    .grade-message.bonus { background: rgba(55,201,143,0.1); border-color: rgba(55,201,143,0.3); color: #a9e6cc; }
+    .grade-message.penalty-note { background: rgba(255,204,86,0.1); border-color: rgba(255,204,86,0.3); color: #ffcc56; }
+    .next-btn { margin-top: var(--space-5); height: 52px; padding: 0 var(--space-6); border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, rgba(48,158,214,0.95), rgba(25,119,168,0.95)); font-weight: 700; }
+
+    .toolbar { display: grid; grid-template-columns: 1.8fr 120px 150px 160px; gap: var(--space-4);
+      padding: var(--space-6) var(--space-8); align-items: center; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .search { position: relative; display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4);
+      height: 64px; border-radius: var(--radius-lg); background: rgba(8,20,30,0.9); border: 1px solid rgba(255,255,255,0.08); }
+    .search.disabled { opacity: 0.4; pointer-events: none; }
+    .search input { flex: 1; background: transparent; border: 0; outline: 0; color: var(--color-text); }
+    .search-results {
+      position: absolute; top: 72px; left: 0; right: 0; z-index: 20; max-height: 360px; overflow-y: auto;
+      background: #0d1f2b; border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+      display: none;
+    }
+    .search-results.open { display: block; }
+    .result-item { display:flex; align-items:center; justify-content:space-between; padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; }
+    .result-item:hover { background: rgba(39,163,214,0.12); }
+    .result-name-row { display:flex; flex-direction: column; }
+    .result-name { font-weight: 600; }
+    .result-meta { color: var(--color-text-muted); font-size: var(--text-sm); }
+    .result-teams { color: #6fe3ff; font-size: var(--text-xs); margin-top: 2px; }
+    .chip-stat, .btn { height: 64px; border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center;
+      border: 1px solid rgba(255,255,255,0.08); background: rgba(8,20,30,0.9); }
+    .chip-stat { flex-direction: column; gap: .15rem; font-family: var(--font-display); color: #ffcc56;
+      background: linear-gradient(180deg, rgba(92,53,12,0.5), rgba(37,24,11,0.85)); }
+    .chip-stat strong { font-size: 2rem; line-height: 1; }
+    .chip-stat span { font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; }
+    .btn { font-weight: 600; background: rgba(18,43,62,0.96); }
+    .btn.primary { background: linear-gradient(180deg, rgba(48,158,214,0.95), rgba(25,119,168,0.95)); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .board-wrap { padding: var(--space-6) var(--space-8) var(--space-8); }
+    .board-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-5); }
+    .team-card { border-radius: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08);
+      background: #0b1622; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+    .team-card.current-drafter { box-shadow: 0 0 0 2px #6fe3ff, var(--shadow-lg); }
+    .team-card.is-you { box-shadow: 0 0 0 2px #37c98f, var(--shadow-lg); }
+    .team-card.is-you.current-drafter { box-shadow: 0 0 0 3px #6fe3ff, 0 0 0 6px rgba(55,201,143,0.4), var(--shadow-lg); }
+    .team-card-header { display:flex; align-items:center; justify-content:space-between; padding: var(--space-4) var(--space-5);
+      background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .drafter-id { display:flex; align-items:center; gap: var(--space-3); }
+    .drafter-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #3e8cff, #6fe3ff);
+      display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight: 700; font-size: var(--text-sm); }
+    .drafter-name { font-family: var(--font-display); font-weight: 700; }
+    .header-right { display:flex; align-items:center; gap: var(--space-2); font-size: var(--text-xs); }
+    .answered-check { color: #37c98f; }
+    .host-tag { font-size: var(--text-xs); color: #ffcc56; }
+    .clock-tag { font-size: var(--text-xs); color: #6fe3ff; font-weight: 700; }
+
+    .pick-row { display:flex; align-items:center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid rgba(0,0,0,0.25); position: relative; min-height: 58px; color: #fff; }
+    .pick-row.waiting-row { background: rgba(255,255,255,0.02); color: var(--color-text-muted); font-style: italic; }
+    .pick-row.brick-row { background: linear-gradient(90deg, rgba(120,20,20,0.65), rgba(70,10,10,0.75)); }
+    .pick-row.active-row { background: linear-gradient(90deg, rgba(20,67,96,0.7), rgba(11,42,63,0.75)); box-shadow: inset 0 0 0 1px rgba(111,227,255,0.4); }
+    .pick-row.penalized-row { box-shadow: inset 0 0 0 1px rgba(255,204,86,0.5); }
+
+    .pos-tag { flex-shrink: 0; width: 44px; height: 26px; border-radius: var(--radius-sm); display:flex; align-items:center; justify-content:center;
+      font-family: var(--font-display); font-size: var(--text-xs); font-weight: 800; color: #fff; letter-spacing: .02em; }
+    .pos-tag.QB { background: #3e6cff; } .pos-tag.RB1, .pos-tag.RB2 { background: #19c786; }
+    .pos-tag.WR1, .pos-tag.WR2 { background: #8b3ee5; } .pos-tag.TE { background: #ff8b2b; }
+    .pos-tag.FLEX { background: #b93ee5; } .pos-tag.SFLEX { background: #1ea8a0; }
+
+    .brick-icon { flex-shrink:0; width: 18px; height: 22px; display:flex; align-items:center; justify-content:center; }
+
+    .team-logo-wrap { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.12);
+      display:flex; align-items:center; justify-content:center; overflow: hidden; }
+    .team-logo-wrap img { width: 100%; height: 100%; object-fit: contain; }
+
+    .pick-name-block { flex: 1; min-width: 0; display:flex; flex-direction: column; }
+    .pick-name { font-weight: 700; font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pick-year { font-size: var(--text-xs); color: rgba(255,255,255,0.75); }
+
+    .pick-pts { flex-shrink: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--text-sm);
+      background: rgba(8,20,30,0.55); padding: .3rem .7rem; border-radius: var(--radius-md); color: #6fe3ff; }
+    .pick-pts.penalized { color: #ffcc56; }
+
+    .team-total-row { display:flex; align-items:center; justify-content:space-between; padding: var(--space-4) var(--space-5);
+      background: rgba(255,255,255,0.02); }
+    .team-total-label { font-weight: 600; color: var(--color-text-muted); }
+    .team-total-value-wrap { display:flex; align-items:center; gap: var(--space-2); }
+    .rank-chip { font-size: var(--text-xs); font-weight: 700; padding: .2rem .5rem; border-radius: var(--radius-sm); }
+    .rank-chip.rank-1 { background: rgba(255,204,86,0.2); color: #ffcc56; }
+    .rank-chip.rank-2 { background: rgba(180,180,190,0.2); color: #c9cdd6; }
+    .rank-chip.rank-3 { background: rgba(205,127,50,0.2); color: #cd8a4e; }
+    .rank-chip.rank-other { background: rgba(255,255,255,0.08); color: var(--color-text-muted); }
+    .team-total-value { font-family: var(--font-display); font-weight: 800; font-size: var(--text-lg);
+      background: rgba(255,255,255,0.06); padding: .3rem .8rem; border-radius: var(--radius-md); }
+
+    .footer-note { padding: 0 var(--space-8) var(--space-8); color: var(--color-text-muted); font-size: var(--text-sm); }
+    .toast { position: fixed; bottom: var(--space-8); left: 50%; transform: translateX(-50%);
+      background: #0d1f2b; border: 1px solid rgba(255,255,255,0.14); padding: var(--space-4) var(--space-6);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display: none; z-index: 50; max-width: 90vw; text-align: center; }
+    .toast.show { display: block; }
+    .toast.error { border-color: rgba(245,84,84,0.5); color: #ffb3b3; }
+    .toast.success { border-color: rgba(39,163,214,0.5); }
+    .toast.warning { border-color: rgba(255,204,86,0.5); color: #ffcc56; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(4,10,16,0.72); display: none;
+      align-items: center; justify-content: center; z-index: 100; padding: var(--space-4); }
+    .modal-overlay.open { display: flex; }
+    .modal-overlay.show { display: flex; }
+    .modal { width: 100%; max-width: 480px; background: #0d1f2b; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); padding: var(--space-6); max-height: 80vh; display: flex; flex-direction: column; }
+    .modal h2 { font-family: var(--font-display); font-size: var(--text-lg); margin-bottom: var(--space-1); }
+    .modal p.sub { color: var(--color-text-muted); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+    .season-list { overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); }
+    .season-item { display:flex; align-items:center; justify-content:space-between; padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); cursor: pointer; }
+    .season-item:hover { background: rgba(39,163,214,0.14); border-color: rgba(39,163,214,0.35); }
+    .season-year { font-family: var(--font-display); font-weight: 700; }
+    .season-team { color: var(--color-text-muted); font-size: var(--text-sm); }
+    .season-range-note { padding: var(--space-2) var(--space-3); margin-bottom: var(--space-2); font-size: var(--text-xs);
+      color: var(--color-text-muted); background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); }
+    .season-option { display:flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+    .season-header { display: flex; align-items: center; justify-content: space-between; }
+    .season-name { font-family: var(--font-display); font-weight: 600; }
+    .season-details { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-sm);
+      color: var(--color-text-muted); }
+    .modal-close { margin-top: var(--space-4); height: 48px; border-radius: var(--radius-md); background: rgba(255,255,255,0.06); font-weight: 600; }
+    .darts-prompt { margin: var(--space-6) 0; padding: var(--space-4); border: 1px solid rgba(39,163,214,0.35); border-radius: var(--radius-lg); background: rgba(39,163,214,0.08); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; }
+    .darts-score-label { color: var(--color-text-muted); font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .08em; }
+    .darts-score { margin: var(--space-1) 0 var(--space-5); color: #ffcc56; font-family: var(--font-display); font-size: clamp(3rem, 12vw, 5rem); font-weight: 800; line-height: 1; }
+    .darts-form { display: flex; gap: var(--space-2); }
+    .darts-form .text-input { flex: 1; }
+    .darts-form .start-btn { margin: 0; }
+    .darts-feedback { min-height: 1.5rem; margin-top: var(--space-3); color: var(--color-text-muted); font-size: var(--text-sm); }
+    .darts-feedback.error { color: var(--color-error); }
+    .darts-feedback.success { color: var(--color-success); }
+    .darts-history { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); max-height: 220px; overflow-y: auto; text-align: left; }
+    .darts-history-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: rgba(255,255,255,0.04); font-size: var(--text-sm); }
+    .darts-history-row.bust { color: var(--color-error); }
+
+    .start-overlay { position: fixed; inset: 0; background: radial-gradient(circle at top, rgba(39,163,214,0.16), transparent 40%), rgba(4,10,16,0.92);
+      display: flex; align-items: center; justify-content: center; z-index: 200; padding: var(--space-4); overflow-y: auto; }
+    .start-overlay.hidden { display: none; }
+    .start-card { width: 100%; max-width: 640px; background: linear-gradient(180deg, rgba(13,27,37,0.97), rgba(7,16,24,0.99));
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; box-shadow: var(--shadow-lg); padding: var(--space-8); text-align: center;
+      margin-block: var(--space-8); }
+    .start-card .logo { justify-content: center; margin-bottom: var(--space-4); }
+    .start-card h1 { font-family: var(--font-display); font-size: var(--text-xl); margin-bottom: var(--space-2); }
+    .start-card p.sub { color: var(--color-text-muted); margin-bottom: var(--space-6); }
+    .start-section-label { text-align: left; font-size: var(--text-sm); font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--color-text-muted); margin-bottom: var(--space-3); }
+    .diff-options { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-bottom: var(--space-6); }
+    .diff-options.scope-options, .diff-options.timer-options, .diff-options.miss-options { grid-template-columns: 1fr 1fr 1fr; }
+    .diff-options.timer-options { grid-template-columns: repeat(5, 1fr); }
+    .diff-option { grid-column: span 1; padding: var(--space-4); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.03); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
+    .diff-options:not(.scope-options):not(.timer-options):not(.miss-options) .diff-option:first-child { grid-column: span 2; }
+    .diff-option:hover { background: rgba(39,163,214,0.1); border-color: rgba(39,163,214,0.4); }
+    .diff-option.selected { border-color: #6fe3ff; background: rgba(39,163,214,0.16); }
+    .diff-option .diff-name { font-family: var(--font-display); font-weight: 700; font-size: var(--text-base); display:flex; align-items:center; gap: var(--space-2); }
+    .diff-option.timer-opt .diff-name { font-size: var(--text-lg); justify-content: center; }
+    .diff-option .diff-desc { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: 4px; }
+    .diff-option.timer-opt .diff-desc { text-align: center; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display:inline-block; flex-shrink: 0; }
+    .dot.ramp { background: linear-gradient(90deg, var(--diff-easy), var(--diff-hard)); }
+    .dot.easy, .dot.zero_skip { background: var(--diff-easy); }
+    .dot.medium, .dot.retry_no_penalty { background: var(--diff-medium); }
+    .dot.hard, .dot.retry_penalty { background: var(--diff-hard); }
+    .dot.mixed { background: linear-gradient(90deg, #6fe3ff, #b9a6ff); }
+    .dot.season { background: #6fe3ff; }
+    .dot.career { background: #b9a6ff; }
+    .start-btn { width: 100%; height: 56px; border-radius: var(--radius-lg); font-weight: 700; font-size: var(--text-base); }
+    .start-btn.primary { background: linear-gradient(180deg, rgba(48,158,214,0.95), rgba(25,119,168,0.95)); }
+    .start-btn.secondary { background: rgba(255,255,255,0.06); }
+
+    .mode-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-6); background: rgba(255,255,255,0.03);
+      padding: var(--space-1); border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.08); }
+    .mode-tab { flex: 1; padding: var(--space-3); border-radius: var(--radius-md); font-weight: 700; text-align: center;
+      color: var(--color-text-muted); }
+    .mode-tab.active { background: rgba(39,163,214,0.22); color: #6fe3ff; }
+    .lobby-panel { display: none; }
+    .lobby-panel.active { display: block; }
+    .lobby-subtabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-5); }
+    .lobby-subtab { flex: 1; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm);
+      font-weight: 600; background: rgba(255,255,255,0.04); color: var(--color-text-muted); }
+    .lobby-subtab.active { background: rgba(255,255,255,0.1); color: var(--color-text); }
+    .lobby-sub-content { display: none; text-align: left; }
+    .lobby-sub-content.active { display: block; }
+    .text-input { width: 100%; height: 52px; border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.03); padding: 0 var(--space-4); color: var(--color-text); margin-bottom: var(--space-4); }
+    .text-input:focus { outline: none; border-color: #6fe3ff; }
+    .toggle-row { display:flex; align-items:center; justify-content:space-between; padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-lg); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); margin-bottom: var(--space-5); }
+    .toggle-switch { width: 44px; height: 24px; border-radius: var(--radius-full); background: rgba(255,255,255,0.15);
+      position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+    .toggle-switch.on { background: #37c98f; }
+    .toggle-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; transition: transform .2s; }
+    .toggle-switch.on::after { transform: translateX(20px); }
+    .public-room-list { display: flex; flex-direction: column; gap: var(--space-2); max-height: 280px; overflow-y: auto; margin-bottom: var(--space-4); }
+    .public-room-item { display:flex; align-items:center; justify-content:space-between; padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); cursor: pointer; }
+    .public-room-item:hover { background: rgba(39,163,214,0.1); border-color: rgba(39,163,214,0.35); }
+    .public-room-code { font-family: var(--font-display); font-weight: 700; letter-spacing: .1em; }
+    .public-room-meta { color: var(--color-text-muted); font-size: var(--text-sm); }
+
+    .penalty-slider-row { display: none; margin-bottom: var(--space-6); padding: var(--space-4); border-radius: var(--radius-lg);
+      background: rgba(255,204,86,0.06); border: 1px solid rgba(255,204,86,0.25); }
+    .penalty-slider-row.show { display: block; }
+    .penalty-slider-label { display:flex; justify-content: space-between; font-size: var(--text-sm); margin-bottom: var(--space-3); color: var(--color-text-muted); }
+    .penalty-slider-label strong { color: #ffcc56; font-family: var(--font-display); }
+    .penalty-slider { width: 100%; accent-color: #ffcc56; }
+
+    .waiting-room-code { font-family: var(--font-display); font-size: 2.5rem; font-weight: 800; letter-spacing: .15em;
+      color: #6fe3ff; background: rgba(39,163,214,0.1); border: 1px dashed rgba(111,227,255,0.4); border-radius: var(--radius-lg);
+      padding: var(--space-4); margin-bottom: var(--space-2); }
+    .waiting-room-share { font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-6); }
+    .waiting-players { display:flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-6); text-align: left; }
+    .waiting-player-item { display:flex; align-items:center; gap: var(--space-3); padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md); background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+    .waiting-player-item .drafter-avatar { width: 32px; height: 32px; font-size: var(--text-xs); }
+
+    @media (max-width: 980px) {
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .hero { padding-inline: var(--space-4); }
+      .hero h1 { font-size: clamp(2rem, 8vw, 3rem); }
+      .board-wrap, .toolbar { padding-inline: var(--space-4); }
+    }
+    @media (max-width: 640px) {
+      .app { padding: var(--space-4) var(--space-3) var(--space-10); }
+      .toolbar { grid-template-columns: 1fr; }
+      .search, .chip-stat, .btn { height: 58px; }
+      .result-top { flex-direction: column; }
+      .diff-options.scope-options, .diff-options.miss-options { grid-template-columns: 1fr; }
+      .diff-options.timer-options { grid-template-columns: repeat(3, 1fr); }
+      .board-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="start-overlay" id="start-overlay">
+    <div class="start-card">
+      <div class="logo" aria-label="DraftForge logo">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="28" height="28">
+          <rect x="4" y="8" width="40" height="32" rx="12" stroke="currentColor" stroke-width="3"/>
+          <path d="M18 16L30 24L18 32" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>DraftForge</span>
+      </div>
+
+      <div class="mode-tabs">
+        <div class="mode-tab active" id="tab-solo">Solo Draft</div>
+        <div class="mode-tab" id="tab-multiplayer">Multiplayer</div>
+        <div class="mode-tab" id="tab-darts">Darts</div>
+      </div>
+
+      <div class="lobby-panel" id="panel-darts">
+        <h1>Stat Darts</h1>
+        <p class="sub">Start with a calibrated score, name qualifying players, and subtract their career totals until you reach exactly zero.</p>
+        <div id="darts-setup">
+          <button class="start-btn primary" id="start-darts-btn">Start Darts Game</button>
+        </div>
+        <div id="darts-game-panel" style="display:none;">
+          <div class="darts-prompt" id="darts-prompt"></div>
+          <div class="darts-score-label">Remaining</div>
+          <div class="darts-score" id="darts-score">—</div>
+          <div class="darts-form">
+            <input type="text" class="text-input" id="darts-answer" placeholder="Type a player name" autocomplete="off" />
+            <button class="start-btn primary" id="submit-darts-answer">Throw</button>
+          </div>
+          <div class="darts-feedback" id="darts-feedback"></div>
+          <div class="darts-history" id="darts-history"></div>
+          <button class="modal-close" id="restart-darts-btn">New Prompt</button>
+        </div>
+      </div>
+
+      <div class="lobby-panel active" id="panel-solo">
+        <h1>Set up your draft</h1>
+        <p class="sub">Choose difficulty, question scope, college questions, timer, and miss policy.</p>
+
+        <div class="start-section-label">Difficulty</div>
+        <div class="diff-options" id="diff-options"></div>
+
+        <div class="start-section-label">Question Scope</div>
+        <div class="diff-options scope-options" id="scope-options"></div>
+
+        <div class="start-section-label">Roster Format</div>
+        <div class="diff-options scope-options" id="board-options"></div>
+
+        <div class="start-section-label">Scoring Rules</div>
+        <div class="diff-options scope-options" id="scoring-options"></div>
+
+        <div class="toggle-row">
+          <div>
+            <div style="font-weight:600;">Name Train</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-muted);">Each pick must start with the last letter of your previous player</div>
+          </div>
+          <div class="toggle-switch" id="name-train-toggle"></div>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <div style="font-weight:600;">College Questions</div>
+            <div style="font-size:var(--text-xs);color:var(--color-text-muted);">Include "played college football at X" questions</div>
+          </div>
+          <div class="toggle-switch on" id="college-toggle"></div>
+        </div>
+
+        <div class="start-section-label">Pick Timer</div>
+        <div class="diff-options timer-options" id="timer-options"></div>
+
+        <div class="start-section-label">If You Miss (timeout OR wrong pick)</div>
+        <div class="diff-options miss-options" id="miss-options"></div>
+
+        <div class="penalty-slider-row" id="penalty-slider-row">
+          <div class="penalty-slider-label"><span>Penalty applied to points once you succeed</span><strong id="penalty-value-label">25%</strong></div>
+          <input type="range" min="0" max="100" step="5" value="25" class="penalty-slider" id="penalty-slider" />
+        </div>
+
+        <button class="start-btn primary" id="start-draft-btn">Start Solo Draft</button>
+      </div>
+
+      <div class="lobby-panel" id="panel-multiplayer">
+        <h1>Multiplayer</h1>
+        <p class="sub">Create a room, join with a code, or browse public rooms. Draft order is a snake draft (1→N, then N→1).</p>
+
+        <div class="start-section-label">Your Display Name</div>
+        <input type="text" class="text-input" id="display-name-input" placeholder="e.g. Jay" maxlength="20" />
+
+        <div class="lobby-subtabs">
+          <div class="lobby-subtab active" id="subtab-create">Create Room</div>
+          <div class="lobby-subtab" id="subtab-join">Join by Code</div>
+          <div class="lobby-subtab" id="subtab-browse">Browse Public</div>
+        </div>
+
+        <div class="lobby-sub-content active" id="content-create">
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">Public Room</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-muted);">Anyone can find and join from the Browse tab</div>
+            </div>
+            <div class="toggle-switch" id="public-toggle"></div>
+          </div>
+
+          <div class="start-section-label">Difficulty</div>
+          <div class="diff-options" id="mp-diff-options"></div>
+
+          <div class="start-section-label">Question Scope</div>
+          <div class="diff-options scope-options" id="mp-scope-options"></div>
+
+          <div class="start-section-label">Roster Format</div>
+          <div class="diff-options scope-options" id="mp-board-options"></div>
+
+          <div class="start-section-label">Scoring Rules</div>
+          <div class="diff-options scope-options" id="mp-scoring-options"></div>
+
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">Name Train</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-muted);">Each pick must start with the last letter of your previous player</div>
+            </div>
+            <div class="toggle-switch" id="mp-name-train-toggle"></div>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">College Questions</div>
+              <div style="font-size:var(--text-xs);color:var(--color-text-muted);">Include "played college football at X" questions</div>
+            </div>
+            <div class="toggle-switch on" id="mp-college-toggle"></div>
+          </div>
+
+          <div class="start-section-label">Pick Timer (per turn)</div>
+          <div class="diff-options timer-options" id="mp-timer-options"></div>
+
+          <div class="start-section-label">If a Player Misses (timeout OR wrong pick)</div>
+          <div class="diff-options miss-options" id="mp-miss-options"></div>
+
+          <div class="penalty-slider-row" id="mp-penalty-slider-row">
+            <div class="penalty-slider-label"><span>Penalty applied once they succeed</span><strong id="mp-penalty-value-label">25%</strong></div>
+            <input type="range" min="0" max="100" step="5" value="25" class="penalty-slider" id="mp-penalty-slider" />
+          </div>
+
+          <button class="start-btn primary" id="create-room-btn">Create Room</button>
+        </div>
+
+        <div class="lobby-sub-content" id="content-join">
+          <div class="start-section-label">Room Code</div>
+          <input type="text" class="text-input" id="join-code-input" placeholder="e.g. X7K2P" maxlength="5" style="text-transform:uppercase;" />
+          <button class="start-btn primary" id="join-room-btn">Join Room</button>
+        </div>
+
+        <div class="lobby-sub-content" id="content-browse">
+          <div class="public-room-list" id="public-room-list"></div>
+          <button class="start-btn secondary" id="refresh-rooms-btn">Refresh List</button>
+        </div>
+
+        <button class="start-btn secondary" id="back-to-solo-btn" style="margin-top:var(--space-4);">← Back</button>
+      </div>
+
+      <div class="lobby-panel" id="panel-waiting">
+        <h1>Waiting Room</h1>
+        <p class="sub">Share this code with your friends:</p>
+        <div class="waiting-room-code" id="waiting-room-code">-----</div>
+        <div class="waiting-room-share">They should choose Multiplayer → Join by Code</div>
+        <div class="start-section-label">Players (draft order = join order)</div>
+        <div class="waiting-players" id="waiting-players"></div>
+        <button class="start-btn primary" id="host-start-btn" style="display:none;">Start Snake Draft</button>
+        <p class="waiting-note show" id="non-host-wait-note">Waiting for the host to start the draft…</p>
+      </div>
+    </div>
+  </div>
+
+  <main class="app">
+    <section class="shell">
+      <header class="hero">
+        <div class="hero-inner">
+          <div class="logo" aria-label="DraftForge logo">
+            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="4" y="8" width="40" height="32" rx="12" stroke="currentColor" stroke-width="3"/>
+              <path d="M18 16L30 24L18 32" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>DraftForge</span>
+          </div>
+          <div class="badge-row">
+            <div class="eyebrow" id="rule-badge">Slot 1 of 7</div>
+            <div class="diff-badge easy" id="diff-badge">Easy</div>
+            <div class="timer-badge" id="timer-badge" style="display:none;">--</div>
+          </div>
+          <h1 id="trivia-title">Loading trivia…</h1>
+          <p class="rule" id="trivia-desc">Connecting to the fantasy football database…</p>
+
+          <div class="on-clock-banner" id="on-clock-banner"></div>
+          <div class="turn-order-strip" id="turn-order-strip"></div>
+
+          <p class="waiting-note" id="retry-note">Time's up — try again with the same question.</p>
+
+          <div class="result-banner" id="result-banner">
+            <div class="result-top">
+              <div>
+                <div class="result-player" id="result-player">—</div>
+                <div class="result-sub" id="result-sub">—</div>
+              </div>
+              <div class="grade-pill" id="grade-pill" style="display:none;"></div>
+            </div>
+            <div class="result-stats">
+              <div class="stat-block"><div class="val pts" id="result-pts">0.0</div><div class="lbl">Fantasy Points</div></div>
+              <div class="stat-block"><div class="val rank" id="result-rank">#0</div><div class="lbl">Rank vs. Qualifiers</div></div>
+              <div class="stat-block"><div class="val pctile" id="result-pctile">—</div><div class="lbl">Percentile</div></div>
+            </div>
+            <div class="grade-message" id="grade-message" style="display:none;"></div>
+            <div class="grade-message bonus" id="best-year-message" style="display:none;">🏆 This is their best season for this position!</div>
+            <div class="grade-message penalty-note" id="penalty-message" style="display:none;"></div>
+            <button class="next-btn" id="next-btn" style="display:none;">Next Question →</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <label class="search" id="search-wrap" aria-label="Search for a player">
+          <span aria-hidden="true">🔎</span>
+          <input type="text" id="player-search" placeholder="Search for a player" autocomplete="off" />
+          <div class="search-results" id="search-results"></div>
+        </label>
+        <div class="chip-stat"><strong id="pos-counter">--</strong><span id="pos-label">POS</span></div>
+        <button class="btn" id="pass-btn">Pass Turn</button>
+        <button class="btn primary" id="restart-btn">Restart</button>
+      </section>
+
+      <section class="board-wrap">
+        <div class="board-grid" id="board"></div>
+      </section>
+
+      <div class="modal-overlay" id="alternatives-modal">
+        <div class="modal">
+          <h2>Top Alternative Picks</h2>
+          <p class="sub" id="alternatives-title"></p>
+          <div class="season-list" id="alternatives-list"></div>
+          <button class="modal-close" id="alternatives-close-btn">Close</button>
+        </div>
+      </div>
+
+      <p class="footer-note">Search a player, pick which season to submit, then see how your pick ranks against everyone else who has ever satisfied this exact question. Once a player is drafted, no one else in the room can draft them again. Wrong picks now count as a miss, same as running out of time.</p>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="season-modal">
+    <div class="modal">
+      <h2 id="modal-player-name">Select a season</h2>
+      <p class="sub" id="modal-player-sub">Choose which season to submit for this question.</p>
+      <div class="season-list" id="season-list"></div>
+      <button class="modal-close" id="modal-close-btn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API = window.location.origin;
+    const WS_BASE = API.replace(/^http/, "ws");
+    let TEAM_STYLES = {};
+
+    let gameMode = "solo";
+    let ws = null;
+    let myDisplayName = "";
+    let roomCode = null;
+    let roomState = null;
+    let isHost = false;
+
+    let slotOrder = [];
+    let currentSlotIdx = 0;
+    let currentQuestion = null;
+    let picks = {};
+    let pickQuestions = {};
+    let excludedPlayerIds = [];
+    let awaitingNext = false;
+    let timedOutThisSlot = false;
+
+    let selectedMode = "ramp";
+    let selectedScope = "mixed";
+    let selectedTimerSeconds = 0;
+    let selectedAllowCollege = true;
+    let selectedMissPolicy = "zero_skip";
+    let selectedPenaltyPercent = 25;
+    let selectedBoardType = "standard";
+    let selectedScoringMode = "fantasy";
+    let selectedNameTrain = false;
+    let nameTrainRequiredLetter = null;
+
+    let mpSelectedMode = "ramp";
+    let mpSelectedScope = "mixed";
+    let mpSelectedTimerSeconds = 0;
+    let mpIsPublic = false;
+    let mpAllowCollege = true;
+    let mpMissPolicy = "zero_skip";
+    let mpPenaltyPercent = 25;
+    let mpSelectedBoardType = "standard";
+    let mpSelectedScoringMode = "fantasy";
+    let mpSelectedNameTrain = false;
+
+    let searchTimer = null;
+    let timerInterval = null;
+    let timeRemaining = 0;
+    let selectedPlayer = null;
+
+    function toast(msg, type = "success") {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.className = `toast show ${type}`;
+      setTimeout(() => el.classList.remove("show"), 3200);
+    }
+
+    function initials(name) {
+      return (name || "?").split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase();
+    }
+
+    async function loadTeamStyles() {
+      try {
+        const res = await fetch(`${API}/api/teams`);
+        const teams = await res.json();
+        teams.forEach((t) => {
+          TEAM_STYLES[t.team_abbr] = {
+            color: t.team_color || "#22303c", color2: t.team_color2 || "#12181f",
+            logo: t.team_logo_url || "", name: t.team_name || t.team_abbr,
+          };
+        });
+      } catch (e) { /* non-fatal */ }
+    }
+
+    function showLobbyPanel(id) {
+      document.querySelectorAll(".lobby-panel").forEach(p => p.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+    }
+
+    document.getElementById("tab-solo").addEventListener("click", () => {
+      document.getElementById("tab-solo").classList.add("active");
+      document.getElementById("tab-multiplayer").classList.remove("active");
+      document.getElementById("tab-darts").classList.remove("active");
+      gameMode = "solo";
+      showLobbyPanel("panel-solo");
+    });
+    document.getElementById("tab-multiplayer").addEventListener("click", () => {
+      document.getElementById("tab-multiplayer").classList.add("active");
+      document.getElementById("tab-solo").classList.remove("active");
+      document.getElementById("tab-darts").classList.remove("active");
+      gameMode = "multiplayer";
+      showLobbyPanel("panel-multiplayer");
+    });
+    document.getElementById("tab-darts").addEventListener("click", () => {
+      document.getElementById("tab-darts").classList.add("active");
+      document.getElementById("tab-solo").classList.remove("active");
+      document.getElementById("tab-multiplayer").classList.remove("active");
+      gameMode = "darts";
+      showLobbyPanel("panel-darts");
+    });
+    document.getElementById("back-to-solo-btn").addEventListener("click", () => {
+      document.getElementById("tab-solo").click();
+    });
+
+    function showLobbySubtab(name) {
+      ["create", "join", "browse"].forEach(n => {
+        document.getElementById(`subtab-${n}`).classList.toggle("active", n === name);
+        document.getElementById(`content-${n}`).classList.toggle("active", n === name);
+      });
+      if (name === "browse") refreshPublicRooms();
+    }
+    document.getElementById("subtab-create").addEventListener("click", () => showLobbySubtab("create"));
+    document.getElementById("subtab-join").addEventListener("click", () => showLobbySubtab("join"));
+    document.getElementById("subtab-browse").addEventListener("click", () => showLobbySubtab("browse"));
+
+    document.getElementById("public-toggle").addEventListener("click", (e) => {
+      mpIsPublic = !mpIsPublic;
+      e.target.classList.toggle("on", mpIsPublic);
+    });
+    document.getElementById("college-toggle").addEventListener("click", (e) => {
+      selectedAllowCollege = !selectedAllowCollege;
+      e.target.classList.toggle("on", selectedAllowCollege);
+    });
+    document.getElementById("mp-college-toggle").addEventListener("click", (e) => {
+      mpAllowCollege = !mpAllowCollege;
+      e.target.classList.toggle("on", mpAllowCollege);
+    });
+    document.getElementById("name-train-toggle").addEventListener("click", (e) => {
+      selectedNameTrain = !selectedNameTrain;
+      e.target.classList.toggle("on", selectedNameTrain);
+    });
+    document.getElementById("mp-name-train-toggle").addEventListener("click", (e) => {
+      mpSelectedNameTrain = !mpSelectedNameTrain;
+      e.target.classList.toggle("on", mpSelectedNameTrain);
+    });
+
+    document.getElementById("penalty-slider").addEventListener("input", (e) => {
+      selectedPenaltyPercent = parseInt(e.target.value, 10);
+      document.getElementById("penalty-value-label").textContent = `${selectedPenaltyPercent}%`;
+    });
+    document.getElementById("mp-penalty-slider").addEventListener("input", (e) => {
+      mpPenaltyPercent = parseInt(e.target.value, 10);
+      document.getElementById("mp-penalty-value-label").textContent = `${mpPenaltyPercent}%`;
+    });
+
+    async function loadOptionGroup(endpoint, containerId, getSelected, setSelected) {
+      const res = await fetch(`${API}${endpoint}`);
+      const options = await res.json();
+      const wrap = document.getElementById(containerId);
+      wrap.innerHTML = "";
+      options.forEach((opt) => {
+        const el = document.createElement("div");
+        el.className = "diff-option" + (opt.key === getSelected() ? " selected" : "");
+        el.innerHTML = `<div class="diff-name"><span class="dot ${opt.key}"></span>${opt.label}</div><div class="diff-desc">${opt.description}</div>`;
+        el.onclick = () => {
+          setSelected(opt.key);
+          wrap.querySelectorAll(".diff-option").forEach((n) => n.classList.remove("selected"));
+          el.classList.add("selected");
+        };
+        wrap.appendChild(el);
+      });
+    }
+
+    async function loadBoardAndScoringOptions(endpoint, containerId, getSelected, setSelected) {
+      await loadOptionGroup(endpoint, containerId, getSelected, setSelected);
+    }
+
+    async function loadMissPolicyGroup(containerId, sliderRowId, getSelected, setSelected) {
+      const res = await fetch(`${API}/api/draft/miss-policy-options`);
+      const options = await res.json();
+      const wrap = document.getElementById(containerId);
+      wrap.innerHTML = "";
+      options.forEach((opt) => {
+        const el = document.createElement("div");
+        el.className = "diff-option" + (opt.key === getSelected() ? " selected" : "");
+        el.innerHTML = `<div class="diff-name"><span class="dot ${opt.key}"></span>${opt.label}</div><div class="diff-desc">${opt.description}</div>`;
+        el.onclick = () => {
+          setSelected(opt.key);
+          wrap.querySelectorAll(".diff-option").forEach((n) => n.classList.remove("selected"));
+          el.classList.add("selected");
+          document.getElementById(sliderRowId).classList.toggle("show", opt.key === "retry_penalty");
+        };
+        wrap.appendChild(el);
+      });
+    }
+
+    function loadTimerOptionGroup(containerId, getSelected, setSelected) {
+      const options = [
+        { key: 0, label: "Off", desc: "No time limit" }, { key: 30, label: "30s", desc: "Fast" },
+        { key: 45, label: "45s", desc: "Quick" }, { key: 60, label: "60s", desc: "Standard" },
+        { key: 90, label: "90s", desc: "Relaxed" },
+      ];
+      const wrap = document.getElementById(containerId);
+      wrap.innerHTML = "";
+      options.forEach((opt) => {
+        const el = document.createElement("div");
+        el.className = "diff-option timer-opt" + (opt.key === getSelected() ? " selected" : "");
+        el.innerHTML = `<div class="diff-name">${opt.label}</div><div class="diff-desc">${opt.desc}</div>`;
+        el.onclick = () => {
+          setSelected(opt.key);
+          wrap.querySelectorAll(".diff-option").forEach((n) => n.classList.remove("selected"));
+          el.classList.add("selected");
+        };
+        wrap.appendChild(el);
+      });
+    }
+
+    async function refreshPublicRooms() {
+      const listEl = document.getElementById("public-room-list");
+      listEl.innerHTML = "Loading…";
+      try {
+        const res = await fetch(`${API}/api/rooms`);
+        const roomsList = await res.json();
+        listEl.innerHTML = "";
+        if (!roomsList.length) {
+          listEl.innerHTML = `<div class="public-room-meta">No public rooms open right now.</div>`;
+          return;
+        }
+        roomsList.forEach((r) => {
+          const item = document.createElement("div");
+          item.className = "public-room-item";
+          item.innerHTML = `
+            <div><div class="public-room-code">${r.code}</div><div class="public-room-meta">${r.player_count} player(s) waiting</div></div>
+            <span class="public-room-meta">${r.settings.mode} / ${r.settings.scope_mode}</span>
+          `;
+          item.onclick = () => joinRoom(r.code);
+          listEl.appendChild(item);
+        });
+      } catch (e) {
+        listEl.innerHTML = `<div class="public-room-meta">Could not load rooms.</div>`;
+      }
+    }
+    document.getElementById("refresh-rooms-btn").addEventListener("click", refreshPublicRooms);
+
+    document.getElementById("create-room-btn").addEventListener("click", async () => {
+      myDisplayName = document.getElementById("display-name-input").value.trim();
+      if (!myDisplayName) { toast("Enter a display name first", "error"); return; }
+      try {
+        const res = await fetch(`${API}/api/rooms`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            is_public: mpIsPublic, mode: mpSelectedMode, scope_mode: mpSelectedScope,
+            timer_seconds: mpSelectedTimerSeconds, allow_college: mpAllowCollege,
+            miss_policy: mpMissPolicy, miss_penalty_percent: mpPenaltyPercent,
+            board_type: mpSelectedBoardType, scoring_mode: mpSelectedScoringMode, name_train: mpSelectedNameTrain,
+          }),
+        });
+        const data = await res.json();
+        roomCode = data.code;
+        connectWebSocket();
+      } catch (e) { toast("Could not create room", "error"); }
+    });
+
+    document.getElementById("join-room-btn").addEventListener("click", () => {
+      myDisplayName = document.getElementById("display-name-input").value.trim();
+      const code = document.getElementById("join-code-input").value.trim().toUpperCase();
+      if (!myDisplayName) { toast("Enter a display name first", "error"); return; }
+      if (!code) { toast("Enter a room code", "error"); return; }
+      joinRoom(code);
+    });
+
+    function joinRoom(code) {
+      myDisplayName = document.getElementById("display-name-input").value.trim();
+      if (!myDisplayName) { toast("Enter a display name first", "error"); return; }
+      roomCode = code;
+      connectWebSocket();
+    }
+
+    function connectWebSocket() {
+      ws = new WebSocket(`${WS_BASE}/ws/room/${roomCode}?display_name=${encodeURIComponent(myDisplayName)}`);
+      ws.onopen = () => { gameMode = "multiplayer"; };
+      ws.onmessage = (evt) => handleWsMessage(JSON.parse(evt.data));
+      ws.onerror = () => toast("Connection error", "error");
+      ws.onclose = () => { if (roomState && roomState.status !== "complete") toast("Disconnected from room", "error"); };
+    }
+
+    function handleWsMessage(msg) {
+      if (msg.type === "error") { toast(msg.message, "error"); return; }
+      if (msg.type === "room_state") { roomState = msg.room; onRoomStateUpdate(); return; }
+      if (msg.type === "turn_start") { onTurnStart(msg); return; }
+      if (msg.type === "pick_result") { onPeerPickResult(msg); return; }
+      if (msg.type === "pick_rejected") {
+        showResultBanner(null, msg.reason, false);
+        if (msg.policy === "retry_penalty") toast("Careful — a penalty will now apply once you succeed on this pick", "warning");
+        if (msg.policy === "zero_skip") toast("Wrong pick under Zero-Points-Skip — your turn is ending", "error");
+        return;
+      }
+      if (msg.type === "turn_miss") {
+        const label = msg.reason === "wrong_pick" ? "answered incorrectly" : "missed the timer";
+        const score = roomState && roomState.settings && roomState.settings.scoring_mode === "golf" ? "100 strokes" : "0 points";
+        toast(`${msg.display_name} ${label} — ${score}`, "warning");
+        return;
+      }
+      if (msg.type === "turn_retry") {
+        const mine = msg.display_name === myDisplayName;
+        toast(mine ? "Try again on the same question." + (msg.penalty_active ? " (penalty will apply)" : "") : `${msg.display_name} is retrying…`, "warning");
+        return;
+      }
+      if (msg.type === "draft_complete") { renderComplete(); return; }
+    }
+
+    function onRoomStateUpdate() {
+      const me = roomState.players.find(p => p.display_name === myDisplayName);
+      isHost = me ? me.is_host : false;
+
+      if (roomState.status === "waiting") {
+        showLobbyPanel("panel-waiting");
+        document.getElementById("waiting-room-code").textContent = roomState.code || roomCode;
+        const listEl = document.getElementById("waiting-players");
+        listEl.innerHTML = "";
+        roomState.players.forEach((p) => {
+          const item = document.createElement("div");
+          item.className = "waiting-player-item";
+          item.innerHTML = `<div class="drafter-avatar">${initials(p.display_name)}</div><div>${p.display_name}${p.is_host ? " (Host)" : ""}</div>`;
+          listEl.appendChild(item);
+        });
+        document.getElementById("host-start-btn").style.display = isHost ? "block" : "none";
+        document.getElementById("non-host-wait-note").style.display = isHost ? "none" : "block";
+      } else if (roomState.status === "drafting" || roomState.status === "complete") {
+        document.getElementById("start-overlay").classList.add("hidden");
+        renderMultiplayerBoard();
+        renderTurnOrderStrip();
+        renderOnClockBanner();
+        const myTurn = roomState.on_the_clock === myDisplayName && roomState.status === "drafting";
+        setSearchEnabled(myTurn);
+        document.getElementById("pass-btn").disabled = !myTurn;
+      }
+    }
+
+    document.getElementById("host-start-btn").addEventListener("click", () => {
+      ws.send(JSON.stringify({ type: "start_draft" }));
+    });
+
+    function renderOnClockBanner() {
+      const banner = document.getElementById("on-clock-banner");
+      if (roomState.status !== "drafting" || !roomState.on_the_clock) { banner.classList.remove("show", "you"); return; }
+      const isYou = roomState.on_the_clock === myDisplayName;
+      banner.classList.add("show");
+      banner.classList.toggle("you", isYou);
+      banner.textContent = isYou ? "🎯 You're on the clock!" : `🎯 ${roomState.on_the_clock} is on the clock…`;
+    }
+
+    function renderTurnOrderStrip() {
+      const strip = document.getElementById("turn-order-strip");
+      strip.innerHTML = "";
+      if (!roomState.draft_order || !roomState.draft_order.length) return;
+      const order = roomState.current_slot_idx % 2 === 0 ? roomState.draft_order : [...roomState.draft_order].slice().reverse();
+      order.forEach((name) => {
+        const avatar = document.createElement("div");
+        const isActive = name === roomState.on_the_clock;
+        avatar.className = "turn-avatar" + (isActive ? " active" : "");
+        avatar.textContent = initials(name);
+        avatar.title = name;
+        strip.appendChild(avatar);
+      });
+    }
+
+    function onTurnStart(q) {
+      currentQuestion = q;
+      awaitingNext = false;
+      document.getElementById("result-banner").classList.remove("show", "invalid", "penalized");
+      document.getElementById("retry-note").classList.remove("show");
+      document.getElementById("trivia-title").textContent = q.title;
+      document.getElementById("trivia-desc").textContent = q.description;
+      document.getElementById("rule-badge").textContent = `Slot ${roomState.current_slot_idx + 1} of ${roomState.slot_order.length} — ${q.slot_label} — ${q.category.replace(/_/g, " ")}`;
+      const diffBadge = document.getElementById("diff-badge");
+      const diffKey = q.category === "COLLEGE_MATCH" ? "college" : q.difficulty;
+      diffBadge.textContent = q.category === "COLLEGE_MATCH" ? "College" : (q.difficulty.charAt(0).toUpperCase() + q.difficulty.slice(1));
+      diffBadge.className = `diff-badge ${diffKey}`;
+      document.getElementById("pos-counter").textContent = q.position;
+      document.getElementById("pos-label").textContent = q.position ? "POS" : "RULE";
+      if (q.timer_end) startSyncedTimer(q.timer_end); else stopTimer();
+    }
+
+    function onPeerPickResult(msg) {
+      if (msg.display_name === myDisplayName) {
+        showResultBanner(msg.result, null, true);
+      }
+    }
+
+    function startSyncedTimer(timerEndEpochSeconds) {
+      stopTimer();
+      const badge = document.getElementById("timer-badge");
+      badge.style.display = "inline-flex";
+      const tick = () => {
+        timeRemaining = Math.max(0, Math.round(timerEndEpochSeconds - Date.now() / 1000));
+        badge.textContent = `⏱ ${timeRemaining}s`;
+        badge.className = "timer-badge" + (timeRemaining <= 5 ? " critical" : timeRemaining <= 10 ? " warning" : "");
+        if (timeRemaining <= 0) {
+          stopTimer();
+          if (gameMode === "solo") handleSoloTimeout();
+        }
+      };
+      tick();
+      timerInterval = setInterval(tick, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      document.getElementById("timer-badge").style.display = "none";
+    }
+
+    function setSearchEnabled(enabled) {
+      const wrap = document.getElementById("search-wrap");
+      wrap.classList.toggle("disabled", !enabled);
+      document.getElementById("player-search").disabled = !enabled;
+    }
+
+    function posTagClass(slotKey) { return slotKey; }
+
+    function renderPickRow(slot, pick, rowState) {
+      const row = document.createElement("div");
+      const tagClass = posTagClass(slot.key);
+      if (!pick) {
+        row.className = "pick-row" + (rowState === "active" ? " active-row" : " waiting-row");
+        const label = rowState === "active" ? "Drafting…" : (rowState === "upcoming" ? "Upcoming" : "Waiting");
+        row.innerHTML = `<div class="pos-tag ${tagClass}">${getSlotLabel(slot)}</div><div class="pick-name-block"><div class="pick-name">${label}</div></div>`;
+        return row;
+      }
+      if (pick.missed) {
+        row.className = "pick-row brick-row";
+        row.innerHTML = `
+          <div class="pos-tag ${tagClass}">${getSlotLabel(slot)}</div>
+          <div class="brick-icon" title="Missed pick">🚧</div>
+          <div class="pick-name-block"><div class="pick-name">${pick.grade_label || "Brick"} ${getSlotLabel(slot)}</div><div class="pick-year">${pick.season || "?"}</div></div>
+          <div class="pick-pts">${(pick.fantasy_points || 0).toFixed(2)}</div>
+        `;
+        return row;
+      }
+      const style = TEAM_STYLES[pick.team] || null;
+      row.className = "pick-row" + (pick.penalized ? " penalized-row" : "");
+      row.style.background = style ? `linear-gradient(90deg, ${style.color}, ${style.color2})` : "linear-gradient(90deg, #2a3542, #1a222c)";
+      const logoHtml = style && style.logo
+        ? `<img src="${style.logo}" alt="${pick.team}" loading="lazy" width="30" height="30" onerror="this.parentElement.innerHTML='${initials(pick.team || '')}'" />`
+        : `<span style="font-size:11px;font-weight:700;">${pick.team || ""}</span>`;
+      row.innerHTML = `
+        <div class="pos-tag ${tagClass}">${getSlotLabel(slot)}</div>
+        <div class="team-logo-wrap">${logoHtml}</div>
+        <div class="pick-name-block"><div class="pick-name">${pick.player}${pick.penalized ? " ⚠" : ""}</div><div class="pick-year">'${String(pick.season).slice(-2)}</div></div>
+        <div class="pick-pts${pick.penalized ? " penalized" : ""}">${(pick.fantasy_points || 0).toFixed(2)}</div>
+      `;
+      const pickQuestion = pickQuestions[slot.key];
+      if (gameMode === "solo" && pickQuestion && !pick.missed) {
+        row.style.cursor = "pointer";
+        row.onclick = (e) => { e.stopPropagation(); showAlternativesPicks(pick, pickQuestion); };
+      }
+      return row;
+    }
+
+    async function showAlternativesPicks(pick, question) {
+      try {
+        const params = new URLSearchParams({
+          rule_id: question.rule_id,
+          position: question.position || "ANY",
+          scoring_format: selectedScoringMode,
+        });
+        const res = await fetch(`${API}/api/draft/pick/top-alternatives?${params}`);
+        if (!res.ok) throw new Error("failed to load alternatives");
+        const alternatives = await res.json();
+        const modal = document.getElementById("alternatives-modal");
+        document.getElementById("alternatives-title").textContent = `Top 5 alternatives for ${question.title}`;
+        const list = document.getElementById("alternatives-list");
+        list.innerHTML = "";
+        if (alternatives && alternatives.length > 0) {
+          alternatives.forEach((alt) => {
+            const item = document.createElement("div");
+            item.className = "season-option";
+            item.innerHTML = `<div class="season-header"><span class="season-name"><strong>${alt.player}</strong> (${alt.season})</span></div><div class="season-details"><span>${alt.team || "—"}</span><span>${alt.fantasy_points.toFixed(selectedScoringMode === "golf" ? 0 : 1)} pts</span></div>`;
+            list.appendChild(item);
+          });
+        } else {
+          list.innerHTML = '<p style="text-align:center;color:#999;">No alternatives found</p>';
+        }
+        modal.classList.add("show");
+        document.getElementById("alternatives-close-btn").onclick = () => { modal.classList.remove("show"); };
+      } catch (e) {
+        console.error("alternatives fetch error:", e);
+        toast("Could not load alternatives", "error");
+      }
+    }
+
+    function getSlotLabel(slot) {
+      const multiplayerSuperflex = roomState && roomState.settings && roomState.settings.board_type === "superflex";
+      return selectedBoardType === "superflex" || multiplayerSuperflex ? "SFLX" : slot.label;
+    }
+
+    function createMissPick(label) {
+      return { player: "Brick", team: "", season: "", fantasy_points: selectedScoringMode === "golf" ? 100 : 0, grade_label: label, missed: true };
+    }
+
+    function lastNameLetter(name) {
+      const letters = String(name || "").match(/[A-Za-z]/g);
+      return letters ? letters[letters.length - 1].toUpperCase() : null;
+    }
+
+    function renderMultiplayerBoard() {
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+      const slots = roomState.slot_order;
+
+      roomState.players.forEach((p) => {
+        const isOnClock = p.display_name === roomState.on_the_clock && roomState.status === "drafting";
+        const card = document.createElement("div");
+        card.className = "team-card" + (p.display_name === myDisplayName ? " is-you" : "") + (isOnClock ? " current-drafter" : "");
+        const header = document.createElement("div");
+        header.className = "team-card-header";
+        header.innerHTML = `
+          <div class="drafter-id">
+            <div class="drafter-avatar">${initials(p.display_name)}</div>
+            <div class="drafter-name">${p.display_name}${p.display_name === myDisplayName ? " (You)" : ""}</div>
+          </div>
+          <div class="header-right">${p.is_host ? '<span class="host-tag">HOST</span>' : ""}${isOnClock ? '<span class="clock-tag">ON CLOCK</span>' : ""}</div>
+        `;
+        card.appendChild(header);
+
+        slots.forEach((slot, rowIdx) => {
+          const pick = p.picks[slot.key];
+          let rowState = "waiting";
+          if (rowIdx > roomState.current_slot_idx) rowState = "upcoming";
+          if (rowIdx === roomState.current_slot_idx && isOnClock && !pick) rowState = "active";
+          card.appendChild(renderPickRow(slot, pick, rowState));
+        });
+
+        const golfScoring = roomState.settings && roomState.settings.scoring_mode === "golf";
+        const sorted = [...roomState.players].sort((a, b) => golfScoring ? a.total_points - b.total_points : b.total_points - a.total_points);
+        const rank = sorted.findIndex(x => x.display_name === p.display_name) + 1;
+        const rankClass = rank === 1 ? "rank-1" : rank === 2 ? "rank-2" : rank === 3 ? "rank-3" : "rank-other";
+        const rankLabel = rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : `${rank}th`;
+        const totalRow = document.createElement("div");
+        totalRow.className = "team-total-row";
+        totalRow.innerHTML = `
+          <span class="team-total-label">${golfScoring ? "Strokes" : "Total"}</span>
+          <div class="team-total-value-wrap"><span class="rank-chip ${rankClass}">${rankLabel}</span><span class="team-total-value">${p.total_points.toFixed(2)}</span></div>
+        `;
+        card.appendChild(totalRow);
+        board.appendChild(card);
+      });
+    }
+
+    async function searchPlayers(q) {
+      const resultsEl = document.getElementById("search-results");
+      if (!q || q.length < 2 || awaitingNext || !currentQuestion) { resultsEl.classList.remove("open"); return; }
+      const params = new URLSearchParams({ q });
+      if (currentQuestion.position) params.set("position", currentQuestion.position);
+      try {
+        const res = await fetch(`${API}/api/players/search?${params}`);
+        const players = await res.json();
+        resultsEl.innerHTML = "";
+        if (!players.length) {
+          resultsEl.innerHTML = `<div class="result-item"><span class="result-meta">No matches found</span></div>`;
+        } else {
+          players.forEach((p) => {
+            const item = document.createElement("div");
+            item.className = "result-item";
+            item.innerHTML = `
+              <div class="result-name-row"><span class="result-name">${p.display_name} (${p.years_label})</span><span class="result-teams">${p.teams_label}</span></div>
+              <span class="result-meta">${p.position}</span>
+            `;
+            item.onclick = () => openSeasonPicker(p);
+            resultsEl.appendChild(item);
+          });
+        }
+        resultsEl.classList.add("open");
+      } catch (e) { toast("Search failed — is the backend running?", "error"); }
+    }
+
+    async function openSeasonPicker(player) {
+      selectedPlayer = player;
+      document.getElementById("search-results").classList.remove("open");
+      try {
+        const positionQuery = currentQuestion.position ? `?position=${currentQuestion.position}` : "";
+        const res = await fetch(`${API}/api/players/${player.player_id}/seasons${positionQuery}`);
+        if (!res.ok) throw new Error("no seasons");
+        const seasons = await res.json();
+        document.getElementById("modal-player-name").textContent = `${player.display_name}`;
+        document.getElementById("modal-player-sub").textContent = `Choose which season to submit for: "${currentQuestion.title}"`;
+        const listEl = document.getElementById("season-list");
+        listEl.innerHTML = "";
+        if (currentQuestion.era_is_gate) {
+          const note = document.createElement("div");
+          note.className = "season-range-note";
+          note.textContent = "Pick ANY of their seasons below to submit for scoring.";
+          listEl.appendChild(note);
+        }
+        seasons.slice().reverse().forEach((s) => {
+          const item = document.createElement("div");
+          item.className = "season-item";
+          item.innerHTML = `<span class="season-year">${s.season}</span><span class="season-team">${s.team || ""}</span>`;
+          item.onclick = () => submitPick(player, s.season);
+          listEl.appendChild(item);
+        });
+        document.getElementById("season-modal").classList.add("open");
+      } catch (e) { toast("Could not load seasons for this player", "error"); }
+    }
+
+    function closeSeasonPicker() {
+      document.getElementById("season-modal").classList.remove("open");
+      selectedPlayer = null;
+    }
+
+    async function submitPick(player, season) {
+      if (!currentQuestion || awaitingNext) return;
+      closeSeasonPicker();
+
+      if (gameMode === "multiplayer") {
+        ws.send(JSON.stringify({ type: "submit_pick", player_id: player.player_id, season: season }));
+        document.getElementById("player-search").value = "";
+        return;
+      }
+
+      const slot = slotOrder[currentSlotIdx];
+      const applyPenalty = timedOutThisSlot && selectedMissPolicy === "retry_penalty" ? selectedPenaltyPercent : 0;
+      try {
+        const res = await fetch(`${API}/api/draft/pick`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            player_id: player.player_id, position: currentQuestion.position, rule_id: currentQuestion.rule_id,
+            slot_key: slot.key, season: season, scoring_format: "ppr", mode: selectedMode, scope_mode: selectedScope,
+            excluded_player_ids: excludedPlayerIds, penalty_percent: applyPenalty, board_type: selectedBoardType,
+            scoring_mode: selectedScoringMode, name_train: selectedNameTrain,
+            name_train_required_letter: nameTrainRequiredLetter,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.valid === false) {
+          handleSoloIncorrectPick(data.reason || data.detail || "Pick rejected");
+          return;
+        }
+        stopTimer();
+        picks[slot.key] = data;
+        pickQuestions[slot.key] = { ...currentQuestion };
+        excludedPlayerIds.push(player.player_id);
+        if (selectedNameTrain) nameTrainRequiredLetter = lastNameLetter(data.player);
+        document.getElementById("player-search").value = "";
+        renderSoloBoard();
+        showResultBanner(data, null, true);
+      } catch (e) { toast("Could not validate pick — check backend connection", "error"); }
+    }
+
+    function handleSoloIncorrectPick(reasonMsg) {
+      if (selectedMissPolicy === "zero_skip") {
+        const slot = slotOrder[currentSlotIdx];
+        picks[slot.key] = createMissPick("Wrong Pick");
+        toast(`Incorrect pick — ${selectedScoringMode === "golf" ? "100 strokes" : "0 points"} recorded (${reasonMsg})`, "error");
+        renderSoloBoard();
+        currentSlotIdx += 1;
+        loadSoloQuestion();
+        return;
+      }
+      if (selectedMissPolicy === "retry_penalty") {
+        timedOutThisSlot = true;
+        document.getElementById("retry-note").classList.add("show");
+        document.getElementById("retry-note").textContent = `Incorrect — try again. A ${selectedPenaltyPercent}% penalty will now apply once you succeed.`;
+      }
+      showResultBanner(null, reasonMsg, false);
+    }
+
+    function handleSoloTimeout() {
+      if (awaitingNext) return;
+      if (selectedMissPolicy === "zero_skip") {
+        const slot = slotOrder[currentSlotIdx];
+        picks[slot.key] = createMissPick("Timed Out");
+        toast(`Time's up — ${selectedScoringMode === "golf" ? "100 strokes" : "0 points"} recorded`, "warning");
+        currentSlotIdx += 1;
+        loadSoloQuestion();
+      } else {
+        timedOutThisSlot = true;
+        document.getElementById("retry-note").classList.add("show");
+        document.getElementById("retry-note").textContent = selectedMissPolicy === "retry_penalty"
+          ? `Time's up! Try again — a ${selectedPenaltyPercent}% penalty will apply to your points.`
+          : "Time's up! Try again — no penalty.";
+        if (selectedTimerSeconds) startSyncedTimer(Date.now() / 1000 + selectedTimerSeconds);
+        toast("Time's up — try again", "warning");
+      }
+    }
+
+    function showResultBanner(data, errorMsg, valid) {
+      const banner = document.getElementById("result-banner");
+      banner.classList.remove("invalid", "penalized");
+      banner.classList.add("show");
+      const gradePill = document.getElementById("grade-pill");
+      const gradeMessage = document.getElementById("grade-message");
+      const penaltyMessage = document.getElementById("penalty-message");
+      const bestYearMessage = document.getElementById("best-year-message");
+      const nextBtn = document.getElementById("next-btn");
+
+      if (!valid) {
+        banner.classList.add("invalid");
+        document.getElementById("result-player").textContent = "Invalid pick";
+        document.getElementById("result-sub").textContent = errorMsg;
+        document.getElementById("result-pts").textContent = "—";
+        document.getElementById("result-rank").textContent = "—";
+        document.getElementById("result-pctile").textContent = "—";
+        gradePill.style.display = "none";
+        gradeMessage.style.display = "none";
+        bestYearMessage.style.display = "none";
+        penaltyMessage.style.display = "none";
+        if (gameMode === "solo") {
+          nextBtn.style.display = "block";
+          nextBtn.textContent = "Try Again";
+          awaitingNext = false;
+          nextBtn.onclick = () => { banner.classList.remove("show"); setSearchEnabled(true); document.getElementById("player-search").focus(); };
+        } else {
+          nextBtn.style.display = "none";
+          setSearchEnabled(true);
+        }
+        return;
+      }
+
+      awaitingNext = true;
+      timedOutThisSlot = false;
+      document.getElementById("retry-note").classList.remove("show");
+      if (data.penalized) banner.classList.add("penalized");
+
+      const isCareer = ["CAREER_TOTAL", "STREAK", "LONGEVITY", "TEAM_HISTORY"].includes(data.matched_category);
+      document.getElementById("result-player").textContent = `${data.player}${isCareer ? "" : " (" + data.season + ")"}`;
+      document.getElementById("result-sub").textContent = `${data.team || ""} — ${data.position}${isCareer ? " — career totals" : ""}`;
+      document.getElementById("result-pts").textContent = data.fantasy_points.toFixed(1);
+      document.getElementById("result-rank").textContent = data.pool_rank ? `#${data.pool_rank} of ${data.pool_size}` : "—";
+      document.getElementById("result-pctile").textContent = data.percentile != null ? `${data.percentile}%` : "—";
+
+      if (data.grade_label) {
+        gradePill.style.display = "inline-flex";
+        gradePill.style.background = `${data.grade_color}22`;
+        gradePill.style.color = data.grade_color;
+        gradePill.style.border = `1px solid ${data.grade_color}55`;
+        gradePill.textContent = data.grade_label;
+      } else { gradePill.style.display = "none"; }
+
+      if (data.grade_message) {
+        gradeMessage.style.display = "block";
+        gradeMessage.textContent = data.grade_message;
+        gradeMessage.className = "grade-message" + (data.smart_pick_bonus ? " bonus" : "");
+      } else { gradeMessage.style.display = "none"; }
+
+      if (data.is_best_year) {
+        bestYearMessage.style.display = "block";
+      } else { bestYearMessage.style.display = "none"; }
+
+      if (data.penalized) {
+        penaltyMessage.style.display = "block";
+        penaltyMessage.textContent = `⚠ Penalty applied for missing earlier this turn: reduced from ${data.pre_penalty_points.toFixed(1)} to ${data.fantasy_points.toFixed(1)} points (-${data.penalty_percent}%).`;
+      } else { penaltyMessage.style.display = "none"; }
+
+      if (gameMode === "solo") {
+        nextBtn.style.display = "block";
+        nextBtn.textContent = "Next Question →";
+        nextBtn.onclick = () => { currentSlotIdx += 1; loadSoloQuestion(); };
+      } else {
+        nextBtn.style.display = "none";
+      }
+    }
+
+    document.addEventListener("click", (e) => { if (!e.target.closest(".search")) document.getElementById("search-results").classList.remove("open"); });
+    document.getElementById("modal-close-btn").addEventListener("click", closeSeasonPicker);
+    document.getElementById("season-modal").addEventListener("click", (e) => { if (e.target.id === "season-modal") closeSeasonPicker(); });
+    document.getElementById("player-search").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      const val = e.target.value;
+      searchTimer = setTimeout(() => searchPlayers(val), 300);
+    });
+
+    document.getElementById("pass-btn").addEventListener("click", () => {
+      if (awaitingNext) return;
+      if (gameMode === "multiplayer") { ws.send(JSON.stringify({ type: "pass" })); return; }
+      toast(`Slot skipped — ${selectedScoringMode === "golf" ? "100 strokes" : "0 points"}`, "warning");
+      const slot = slotOrder[currentSlotIdx];
+      picks[slot.key] = createMissPick("Passed");
+      timedOutThisSlot = false;
+      currentSlotIdx += 1;
+      loadSoloQuestion();
+    });
+
+    document.getElementById("restart-btn").addEventListener("click", () => {
+      stopTimer();
+      if (ws) { ws.close(); ws = null; }
+      picks = {}; pickQuestions = {}; currentSlotIdx = 0; roomState = null; roomCode = null; excludedPlayerIds = []; timedOutThisSlot = false;
+      nameTrainRequiredLetter = null;
+      document.getElementById("tab-solo").click();
+      document.getElementById("start-overlay").classList.remove("hidden");
+    });
+
+    async function loadSlotOrder() {
+      const res = await fetch(`${API}/api/draft/slots`);
+      slotOrder = await res.json();
+    }
+
+    async function loadSoloQuestion() {
+      if (currentSlotIdx >= slotOrder.length) { renderComplete(); return; }
+      const slot = slotOrder[currentSlotIdx];
+      document.getElementById("result-banner").classList.remove("show", "invalid", "penalized");
+      document.getElementById("retry-note").classList.remove("show");
+      awaitingNext = false;
+      timedOutThisSlot = false;
+      setSearchEnabled(true);
+      stopTimer();
+      try {
+        const priorPicksObj = {};
+        Object.keys(picks).forEach((key) => { if (picks[key] && picks[key].player_id && !picks[key].missed) priorPicksObj[key] = picks[key].player_id; });
+        const priorPicksParam = encodeURIComponent(JSON.stringify(priorPicksObj));
+        const params = new URLSearchParams({
+          slot_key: slot.key, mode: selectedMode, scope_mode: selectedScope, prior_picks: priorPicksParam,
+          allow_college: selectedAllowCollege, board_type: selectedBoardType, name_train: selectedNameTrain,
+        });
+        const res = await fetch(`${API}/api/draft/question?${params}`);
+        if (!res.ok) throw new Error("question fetch failed");
+        currentQuestion = await res.json();
+        document.getElementById("trivia-title").textContent = currentQuestion.title;
+        document.getElementById("trivia-desc").textContent = currentQuestion.description;
+        document.getElementById("rule-badge").textContent = `Slot ${currentSlotIdx + 1} of ${slotOrder.length} — ${slot.label} — ${currentQuestion.category.replace(/_/g, " ")}`;
+        const diffBadge = document.getElementById("diff-badge");
+        const diffKey = currentQuestion.category === "COLLEGE_MATCH" ? "college" : currentQuestion.difficulty;
+        diffBadge.textContent = currentQuestion.category === "COLLEGE_MATCH" ? "College" : (currentQuestion.difficulty.charAt(0).toUpperCase() + currentQuestion.difficulty.slice(1));
+        diffBadge.className = `diff-badge ${diffKey}`;
+        document.getElementById("pos-counter").textContent = currentQuestion.position || (selectedNameTrain ? "ANY" : "");
+        document.getElementById("pos-label").textContent = currentQuestion.position ? "POS" : "RULE";
+        if (selectedNameTrain && nameTrainRequiredLetter) {
+          document.getElementById("pos-counter").innerHTML = `<span style="font-weight:700;color:#ffcc56;">${nameTrainRequiredLetter}</span>`;
+          document.getElementById("pos-label").innerHTML = '<span style="font-weight:600;">STARTS WITH</span>';
+        }
+        if (selectedTimerSeconds) startSyncedTimer(Date.now() / 1000 + selectedTimerSeconds);
+      } catch (e) {
+        document.getElementById("trivia-title").textContent = "Could not reach backend";
+        document.getElementById("trivia-desc").textContent = "Check that the FastAPI server and PostgreSQL database are both running.";
+      }
+      renderSoloBoard();
+    }
+
+    function renderSoloBoard() {
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+      const card = document.createElement("div");
+      card.className = "team-card is-you";
+      const header = document.createElement("div");
+      header.className = "team-card-header";
+      header.innerHTML = `<div class="drafter-id"><div class="drafter-avatar">${initials("You")}</div><div class="drafter-name">You</div></div>`;
+      card.appendChild(header);
+      slotOrder.forEach((slot, rowIdx) => {
+        const pick = picks[slot.key];
+        const rowState = rowIdx === currentSlotIdx && !pick ? "active" : (rowIdx > currentSlotIdx ? "upcoming" : "waiting");
+        card.appendChild(renderPickRow(slot, pick, rowState));
+      });
+      const total = Object.values(picks).reduce((s, p) => s + (p?.fantasy_points || 0), 0);
+      const totalRow = document.createElement("div");
+      totalRow.className = "team-total-row";
+      totalRow.innerHTML = `<span class="team-total-label">Total</span><div class="team-total-value-wrap"><span class="team-total-value">${total.toFixed(2)}</span></div>`;
+      card.appendChild(totalRow);
+      board.appendChild(card);
+    }
+
+    function renderComplete() {
+      stopTimer();
+      document.getElementById("trivia-title").textContent = "Draft complete!";
+      document.getElementById("trivia-desc").textContent = "Every roster slot is filled. Check final scores below.";
+      document.getElementById("rule-badge").textContent = "Finished";
+      document.getElementById("on-clock-banner").classList.remove("show", "you");
+      setSearchEnabled(false);
+      document.getElementById("next-btn").style.display = "none";
+      if (gameMode === "solo") {
+        const total = Object.values(picks).reduce((s, p) => s + (p?.fantasy_points || 0), 0);
+        toast(`Final score: ${total.toFixed(1)} pts`, "success");
+      } else {
+        renderMultiplayerBoard();
+        toast("Draft complete! Final standings shown below.", "success");
+      }
+    }
+
+    function renderDartsState(state) {
+      document.getElementById("darts-prompt").textContent = state.title;
+      document.getElementById("darts-score").textContent = Number(state.remaining).toLocaleString();
+      const history = document.getElementById("darts-history");
+      history.innerHTML = "";
+      state.history.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = `darts-history-row${item.bust ? " bust" : ""}`;
+        const label = document.createElement("span");
+        label.textContent = item.bust ? `${item.player} — bust` : item.player;
+        const value = document.createElement("span");
+        value.textContent = item.bust ? `+${item.value.toLocaleString()}` : `-${item.value.toLocaleString()}`;
+        row.append(label, value);
+        history.appendChild(row);
+      });
+      const answer = document.getElementById("darts-answer");
+      const submit = document.getElementById("submit-darts-answer");
+      const done = state.status !== "playing";
+      answer.disabled = done;
+      submit.disabled = done;
+      if (state.status === "won") {
+        document.getElementById("darts-feedback").className = "darts-feedback success";
+        document.getElementById("darts-feedback").textContent = "Checkout! You reached exactly zero.";
+      }
+    }
+
+    async function startDartsGame() {
+      const feedback = document.getElementById("darts-feedback");
+      feedback.className = "darts-feedback";
+      feedback.textContent = "Generating a calibrated prompt…";
+      try {
+        const res = await fetch(`${API}/api/darts/start`, { method: "POST" });
+        const state = await res.json();
+        if (!res.ok) throw new Error(state.detail || "Could not start darts game");
+        window.dartsGameId = state.game_id;
+        document.getElementById("darts-setup").style.display = "none";
+        document.getElementById("darts-game-panel").style.display = "block";
+        renderDartsState(state);
+        feedback.textContent = `Starting score: ${state.start_score.toLocaleString()} — top 25 qualifying answers`;
+        document.getElementById("darts-answer").focus();
+      } catch (error) {
+        feedback.className = "darts-feedback error";
+        feedback.textContent = error.message;
+      }
+    }
+
+    async function submitDartsAnswer() {
+      const input = document.getElementById("darts-answer");
+      const feedback = document.getElementById("darts-feedback");
+      const answer = input.value.trim();
+      if (!window.dartsGameId || !answer) return;
+      try {
+        const res = await fetch(`${API}/api/darts/${window.dartsGameId}/answer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answer }),
+        });
+        const state = await res.json();
+        if (!res.ok) throw new Error(state.detail || "Could not submit answer");
+        renderDartsState(state);
+        if (state.valid) {
+          feedback.className = `darts-feedback${state.answer.bust ? " error" : " success"}`;
+          feedback.textContent = state.answer.bust
+            ? `${state.answer.player} is worth ${state.answer.value.toLocaleString()} — bust, score stays at ${state.remaining.toLocaleString()}.`
+            : `${state.answer.player} removes ${state.answer.value.toLocaleString()}.`;
+          input.value = "";
+        } else {
+          feedback.className = "darts-feedback error";
+          feedback.textContent = state.reason;
+        }
+      } catch (error) {
+        feedback.className = "darts-feedback error";
+        feedback.textContent = error.message;
+      }
+      input.focus();
+    }
+
+    document.getElementById("start-darts-btn").addEventListener("click", async () => {
+      await startDartsGame();
+    });
+    document.getElementById("submit-darts-answer").addEventListener("click", submitDartsAnswer);
+    document.getElementById("darts-answer").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") submitDartsAnswer();
+    });
+    document.getElementById("restart-darts-btn").addEventListener("click", () => {
+      window.dartsGameId = null;
+      document.getElementById("darts-setup").style.display = "block";
+      document.getElementById("darts-game-panel").style.display = "none";
+    });
+
+    document.getElementById("start-draft-btn").addEventListener("click", async () => {
+      gameMode = "solo";
+      document.getElementById("start-overlay").classList.add("hidden");
+      excludedPlayerIds = [];
+      nameTrainRequiredLetter = null;
+      await loadSlotOrder();
+      await loadSoloQuestion();
+    });
+
+    (async function init() {
+      await loadTeamStyles();
+      await loadOptionGroup("/api/draft/difficulty-options", "diff-options", () => selectedMode, (v) => selectedMode = v);
+      await loadOptionGroup("/api/draft/scope-options", "scope-options", () => selectedScope, (v) => selectedScope = v);
+      await loadBoardAndScoringOptions("/api/draft/board-type-options", "board-options", () => selectedBoardType, (v) => selectedBoardType = v);
+      await loadBoardAndScoringOptions("/api/draft/scoring-mode-options", "scoring-options", () => selectedScoringMode, (v) => selectedScoringMode = v);
+      loadTimerOptionGroup("timer-options", () => selectedTimerSeconds, (v) => selectedTimerSeconds = v);
+      await loadMissPolicyGroup("miss-options", "penalty-slider-row", () => selectedMissPolicy, (v) => selectedMissPolicy = v);
+
+      await loadOptionGroup("/api/draft/difficulty-options", "mp-diff-options", () => mpSelectedMode, (v) => mpSelectedMode = v);
+      await loadOptionGroup("/api/draft/scope-options", "mp-scope-options", () => mpSelectedScope, (v) => mpSelectedScope = v);
+      await loadBoardAndScoringOptions("/api/draft/board-type-options", "mp-board-options", () => mpSelectedBoardType, (v) => mpSelectedBoardType = v);
+      await loadBoardAndScoringOptions("/api/draft/scoring-mode-options", "mp-scoring-options", () => mpSelectedScoringMode, (v) => mpSelectedScoringMode = v);
+      loadTimerOptionGroup("mp-timer-options", () => mpSelectedTimerSeconds, (v) => mpSelectedTimerSeconds = v);
+      await loadMissPolicyGroup("mp-miss-options", "mp-penalty-slider-row", () => mpMissPolicy, (v) => mpMissPolicy = v);
+    })();
+  </script>
+</body>
+</html>
+</content>

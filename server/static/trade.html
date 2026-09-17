@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fantasy Trade Analyzer</title>
+  <link rel="stylesheet" href="/static/games.css">
+  <style>
+    .trade-shell { width:min(1080px,calc(100% - 32px)); margin:5vh auto; }
+    .trade-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:24px; }
+    .trade-side { min-height:270px; padding:20px; border:1px solid var(--line); border-radius:10px; background:rgba(9,43,61,.82); }
+    .trade-side h2 { margin:0 0 14px; }
+    .trade-search { position:relative; }
+    .trade-results { position:absolute; z-index:5; top:calc(100% + 5px); left:0; right:0; display:none; overflow:hidden; border:1px solid var(--line); border-radius:7px; background:#0b3044; }
+    .trade-results.open { display:block; }
+    .trade-result { display:block; width:100%; padding:11px 13px; border:0; border-bottom:1px solid rgba(255,255,255,.06); background:transparent; color:var(--text); cursor:pointer; text-align:left; }
+    .trade-result:hover { background:#14506d; }
+    .trade-result span { display:block; margin-top:3px; color:var(--muted); font-size:12px; }
+    .selected-list { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+    .selected-player { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:6px; background:#123e58; }
+    .remove-player { border:0; background:transparent; color:#ff7894; cursor:pointer; }
+    .settings-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:24px; }
+    .trade-settings { margin-top:28px; padding:20px; border:1px solid var(--line); border-radius:10px; background:rgba(9,43,61,.82); }
+    .trade-settings label { display:block; margin-bottom:7px; color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+    .trade-settings select { width:100%; padding:12px; border:1px solid var(--line); border-radius:6px; background:#082638; color:var(--text); }
+    .trade-actions { display:flex; justify-content:space-between; align-items:center; margin-top:20px; }
+    .result-panel { display:none; margin-top:24px; padding:24px; border:1px solid var(--line); border-radius:10px; background:#092b3d; }
+    .result-panel.show { display:block; }
+    .verdict { font-size:34px; font-weight:900; color:var(--cyan); }
+    .value-row { display:flex; justify-content:space-between; margin-top:12px; color:var(--muted); }
+    .player-value { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.08); }
+    .source-note { margin-top:16px; color:var(--muted); font-size:13px; }
+    @media(max-width:700px){ .trade-grid,.settings-grid{grid-template-columns:1fr;} .trade-actions{align-items:stretch; flex-direction:column; gap:12px;} }
+  </style>
+</head>
+<body>
+  <main class="trade-shell">
+    <div class="eyebrow">DRAFTFORGE / TRADE ANALYZER</div>
+    <h1>Should I make this trade?</h1>
+    <p class="lead">Add the players you receive and offer, then choose the league context that changes their value.</p>
+    <div class="trade-grid">
+      <section class="trade-side">
+        <h2>You receive</h2>
+        <div class="trade-search"><input class="text-input" id="receive-search" placeholder="Search a player..." autocomplete="off"><div class="trade-results" id="receive-results"></div></div>
+        <div class="selected-list" id="receive-list"></div>
+      </section>
+      <section class="trade-side">
+        <h2>You offer</h2>
+        <div class="trade-search"><input class="text-input" id="offer-search" placeholder="Search a player..." autocomplete="off"><div class="trade-results" id="offer-results"></div></div>
+        <div class="selected-list" id="offer-list"></div>
+      </section>
+    </div>
+    <section class="trade-settings">
+      <div class="settings-grid">
+        <div><label for="league-type">League</label><select id="league-type"><option value="redraft">Redraft</option><option value="dynasty">Dynasty</option></select></div>
+        <div><label for="qb-format">QB format</label><select id="qb-format"><option value="one_qb">1 QB</option><option value="superflex">Superflex</option></select></div>
+        <div><label for="scoring-format">Scoring</label><select id="scoring-format"><option value="ppr">PPR</option><option value="half_ppr">Half PPR</option><option value="standard">Standard</option></select></div>
+      </div>
+      <div class="trade-actions"><a class="secondary-button" href="/">Back</a><button class="primary-button" id="analyze-button">Analyze trade</button></div>
+      <div class="error" id="trade-error"></div>
+    </section>
+    <section class="result-panel" id="result">
+      <div class="eyebrow">ANALYSIS</div>
+      <div class="verdict" id="verdict"></div>
+      <div class="value-row"><span>Value received</span><strong id="received-value"></strong></div>
+      <div class="value-row"><span>Value offered</span><strong id="offered-value"></strong></div>
+      <div class="value-row"><span>Difference</span><strong id="difference"></strong></div>
+      <div class="source-note" id="source-note"></div>
+      <div class="selected-list" id="value-breakdown"></div>
+    </section>
+  </main>
+  <script>
+    const sides = { receive: [], offer: [] };
+    const timers = {};
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+    function renderSide(side) {
+      document.getElementById(`${side}-list`).innerHTML = sides[side].map((p) => `<div class="selected-player"><span>${escapeHtml(p.display_name)} <small>${escapeHtml(p.position)}</small></span><button class="remove-player" data-id="${escapeHtml(p.player_id)}">Remove</button></div>`).join("");
+      document.querySelectorAll(`#${side}-list .remove-player`).forEach((button) => button.addEventListener("click", () => {
+        sides[side] = sides[side].filter((p) => p.player_id !== button.dataset.id); renderSide(side);
+      }));
+    }
+    async function search(side, query) {
+      const results = document.getElementById(`${side}-results`);
+      if (query.length < 2) { results.classList.remove("open"); return; }
+      const response = await fetch(`/api/players/search?q=${encodeURIComponent(query)}`);
+      const players = await response.json();
+      const existing = new Set(sides[side].map((p) => p.player_id));
+      results.innerHTML = players.filter((p) => !existing.has(p.player_id)).map((p) => `<button class="trade-result" data-player="${escapeHtml(p.player_id)}"><strong>${escapeHtml(p.display_name)}</strong><span>${escapeHtml(p.position)} · ${escapeHtml(p.years_label)} · ${escapeHtml(p.teams_label)}</span></button>`).join("") || '<div class="answer-no-results">No matches found</div>';
+      results.classList.add("open");
+      results.querySelectorAll(".trade-result").forEach((button) => button.addEventListener("click", () => {
+        const player = players.find((p) => p.player_id === button.dataset.player);
+        if (player) { sides[side].push(player); renderSide(side); document.getElementById(`${side}-search`).value = ""; results.classList.remove("open"); }
+      }));
+    }
+    ["receive", "offer"].forEach((side) => {
+      document.getElementById(`${side}-search`).addEventListener("input", (event) => {
+        clearTimeout(timers[side]); timers[side] = setTimeout(() => search(side, event.target.value.trim()), 180);
+      });
+    });
+    document.getElementById("analyze-button").addEventListener("click", async () => {
+      const error = document.getElementById("trade-error"); error.textContent = "";
+      try {
+        const response = await fetch("/api/trade/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({
+          received_player_ids: sides.receive.map((p) => p.player_id), offered_player_ids: sides.offer.map((p) => p.player_id),
+          league_type: document.getElementById("league-type").value, qb_format: document.getElementById("qb-format").value, scoring_format: document.getElementById("scoring-format").value
+        })});
+        const data = await response.json(); if (!response.ok) throw new Error(data.detail || "Could not analyze trade");
+        document.getElementById("result").classList.add("show"); document.getElementById("verdict").textContent = data.verdict;
+        document.getElementById("received-value").textContent = data.received_value.toFixed(1); document.getElementById("offered-value").textContent = data.offered_value.toFixed(1); document.getElementById("difference").textContent = (data.difference >= 0 ? "+" : "") + data.difference.toFixed(1);
+        document.getElementById("source-note").textContent = `Projection source: ${data.projection_source}. Values include positional scarcity for ${data.league.qb_format === "superflex" ? "superflex" : "1 QB"} and ${data.league.type}.`;
+        document.getElementById("value-breakdown").innerHTML = data.players.map((p) => `<div class="player-value"><span>${escapeHtml(p.display_name)} (${p.side})<small> ${p.position} · ${p.projection.toFixed(1)} projected</small></span><strong>${p.trade_value.toFixed(1)}</strong></div>`).join("");
+        document.getElementById("result").scrollIntoView({behavior:"smooth"});
+      } catch (e) { error.textContent = e.message; }
+    });
+  </script>
+</body>
+</html>

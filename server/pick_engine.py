@@ -335,6 +335,9 @@ def build_name_train_result(cur, player_id: str, position: Optional[str], season
     points_column = POINTS_COLUMN.get(scoring_format, "fantasy_pts_ppr")
     pick_points = match[points_column] or 0
 
+    best_season_row = max([r for r in rows if r["position"] == match_position], key=lambda r: r[points_column] or 0)
+    is_best_year = match["season"] == best_season_row["season"] and pick_points == (best_season_row[points_column] or 0)
+
     sql = f"SELECT {points_column} AS sort_val, player_id, season FROM trivia_player_seasons WHERE position = %s"
     rank, pool_size = rank_in_qualifying_pool(cur, sql, [match_position], pick_points, "season", player_id, match["season"])
     grade = grade_pick(rank, pool_size, "medium", f"best {match_position} season by fantasy points")
@@ -343,6 +346,7 @@ def build_name_train_result(cur, player_id: str, position: Optional[str], season
         "valid": True, "player": display_name, "player_id": player_id, "team": match["team"],
         "season": match["season"], "position": match_position, "fantasy_points": pick_points,
         "matched_category": "NAME_TRAIN", "difficulty": "name_train", "rule_title": "Name Train",
+        "is_best_year": is_best_year,
         **grade,
     }
 
@@ -413,10 +417,14 @@ def evaluate_pick(cur, rule_id: str, position: str, player_id: str, season: int,
             if not ok:
                 return {"valid": False, "reason": reason}
         pick_points = match[points_column] or 0
+
+        best_season_row = max([r for r in rows if r["position"] == position], key=lambda r: r[points_column] or 0)
+        is_best_year = match["season"] == best_season_row["season"] and pick_points == (best_season_row[points_column] or 0)
+
         sql, sql_params, id_mode = build_pool_query(rule, position)
         rank, pool_size = rank_in_qualifying_pool(cur, sql, sql_params, pick_points, id_mode, player_id, match["season"])
         grade = grade_pick(rank, pool_size, rule["difficulty"], rule_title)
-        return {"valid": True, "player": display_name, "player_id": player_id, "team": match["team"], "season": season, "position": position, "fantasy_points": pick_points, "matched_category": rule["category"], "difficulty": rule["difficulty"], "rule_title": rule_title, **grade}
+        return {"valid": True, "player": display_name, "player_id": player_id, "team": match["team"], "season": season, "position": position, "fantasy_points": pick_points, "matched_category": rule["category"], "difficulty": rule["difficulty"], "rule_title": rule_title, "is_best_year": is_best_year, **grade}
 
     ok, detail, reason = validate_career_rule(rows, rule, position)
     if not ok:
