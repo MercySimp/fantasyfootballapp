@@ -14,6 +14,7 @@
     <label class="select-label" for="game-select">Trivia game</label>
     <select id="game-select" class="game-select">
       <option value="darts">Stat Darts</option>
+      <option value="triple-threat">Triple Threat</option>
       <option value="draft">Fantasy Trivia Draft</option>
       <option value="trade">Fantasy Trade Analyzer</option>
     </select>
@@ -22,14 +23,21 @@
       <strong>Stat Darts</strong>
       <span>Start from a calibrated number, name qualifying players, and check out to zero.</span>
     </div>
+    <div class="portal-card">
+      <strong>Triple Threat</strong>
+      <span>Spin a season, a stat, and a rank &mdash; guess who finished there. Exact hits cost you.</span>
+    </div>
   </main>
   <script>
     document.getElementById("continue-button").addEventListener("click", () => {
       const game = document.getElementById("game-select").value;
-      const destination = game === "darts"
-        ? "/static/darts-setup.html"
-        : game === "trade" ? "/static/trade.html" : "/static/draft.html";
-      window.location.href = destination;
+      const destinations = {
+        darts: "/static/darts-setup.html",
+        "triple-threat": "/static/triple-threat.html",
+        trade: "/static/trade.html",
+        draft: "/static/draft.html",
+      };
+      window.location.href = destinations[game] || "/static/draft.html";
     });
   </script>
 </body>
