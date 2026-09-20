@@ -15,7 +15,7 @@
     margin:0; background:var(--bg); color:var(--text);
     font-family:'Segoe UI',Arial,sans-serif; min-height:100vh;
   }
-  .wrap{max-width:1100px; margin:0 auto; padding:24px 16px 60px;}
+  .wrap{max-width:1280px; margin:0 auto; padding:24px 16px 60px;}
   h1{font-size:28px; letter-spacing:1px; margin:0 0 4px;}
   .subtitle{color:var(--muted); margin:0 0 24px; font-size:14px;}
 
@@ -37,13 +37,13 @@
   .hidden{display:none !important;}
 
   /* Wheel row */
-  .wheels{display:flex; gap:28px; justify-content:center; flex-wrap:wrap; margin:20px 0 10px;}
+  .wheels{display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:20px 0 14px;}
   .wheel-box{text-align:center;}
-  .wheel-label{color:var(--muted); font-size:12px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px;}
+  .wheel-label{color:var(--muted); font-size:13px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:10px;}
 
   .wheel-ring{
-    width:180px; height:180px; border-radius:50%; position:relative;
-    border:4px solid var(--border); box-shadow:0 0 0 6px #0006 inset;
+    width:280px; height:280px; border-radius:50%; position:relative;
+    border:5px solid var(--border); box-shadow:0 0 0 8px #0006 inset;
     margin:0 auto; overflow:hidden; background:var(--panel2);
   }
   .wheel-slices{
@@ -52,23 +52,24 @@
     transition:transform 5s cubic-bezier(.12,.72,.13,1);
   }
   .wheel-slices .slice-label{
-    position:absolute; left:50%; top:50%; width:60px; text-align:center;
-    font-size:9px; font-weight:800; color:#04140d; text-shadow:0 1px 0 #ffffff55;
-    line-height:1; pointer-events:none;
+    position:absolute; left:50%; top:50%; width:88px; text-align:center;
+    font-size:12px; font-weight:800; color:#04140d;
+    text-shadow:0 1px 0 #ffffffaa, 0 -1px 0 #ffffffaa, 1px 0 0 #ffffffaa, -1px 0 0 #ffffffaa;
+    line-height:1.15; pointer-events:none;
   }
-  .wheel-slices.slices-few .slice-label{ font-size:11px; width:70px; }
+  .wheel-slices.slices-many .slice-label{ font-size:10px; width:36px; line-height:1; }
   .wheel-hub{
-    position:absolute; left:50%; top:50%; width:64%; height:64%;
+    position:absolute; left:50%; top:50%; width:60%; height:60%;
     transform:translate(-50%,-50%); border-radius:50%;
-    background:var(--panel); border:2px solid var(--border);
+    background:var(--panel); border:3px solid var(--border);
     display:flex; align-items:center; justify-content:center;
-    font-size:20px; font-weight:800; color:var(--accent2); text-align:center;
-    padding:6px; z-index:4;
+    font-size:26px; font-weight:800; color:var(--accent2); text-align:center;
+    padding:8px; z-index:4;
   }
   .wheel-pointer{
-    position:absolute; top:-10px; left:50%; transform:translateX(-50%);
-    width:0; height:0; border-left:9px solid transparent; border-right:9px solid transparent;
-    border-top:16px solid var(--gold); z-index:5;
+    position:absolute; top:-13px; left:50%; transform:translateX(-50%);
+    width:0; height:0; border-left:11px solid transparent; border-right:11px solid transparent;
+    border-top:20px solid var(--gold); z-index:5;
     filter:drop-shadow(0 1px 2px #0008);
   }
   .wheel-ring.spinning .wheel-hub{ color:var(--muted); }
@@ -80,6 +81,25 @@
   .prompt-sub{text-align:center; color:var(--muted); font-size:13px; margin-bottom:16px;}
 
   .guess-form{display:flex; gap:10px; justify-content:center; margin-bottom:6px;}
+  .answer-wrap{position:relative; width:320px;}
+  .answer-input{
+    width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    padding:10px 12px; border-radius:8px; font-size:14px; outline:none;
+  }
+  .answer-input:focus{border-color:var(--accent2);}
+  .answer-results{
+    display:none; position:absolute; z-index:20; top:calc(100% + 5px); left:0; right:0;
+    max-height:280px; overflow-y:auto; background:#0d2432; border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 15px 30px rgba(0,0,0,.4); text-align:left;
+  }
+  .answer-results.open{display:block;}
+  .answer-result{
+    display:block; width:100%; padding:10px 12px; border:0; border-bottom:1px solid #ffffff0c;
+    background:transparent; color:var(--text); text-align:left; cursor:pointer; font-size:13px;
+  }
+  .answer-result:hover{background:#123e56;}
+  .answer-result span{display:block; margin-top:2px; color:var(--muted); font-size:11px;}
+  .answer-no-results{padding:12px; color:var(--muted); font-size:13px;}
   .status-line{text-align:center; color:var(--muted); font-size:13px; margin-bottom:14px;}
 
   table{width:100%; border-collapse:collapse; font-size:14px;}
@@ -100,7 +120,13 @@
   .history-item .h-answers{font-size:12px; color:var(--muted); margin-top:4px;}
 
   .grid2{display:grid; grid-template-columns:1.4fr 1fr; gap:20px;}
-  @media (max-width:800px){ .grid2{grid-template-columns:1fr;} }
+  @media (max-width:900px){ .grid2{grid-template-columns:1fr;} }
+  @media (max-width:700px){
+    .wheel-ring{width:220px; height:220px;}
+    .wheel-hub{font-size:20px;}
+    .answer-wrap{width:100%;}
+    .guess-form{flex-direction:column; align-items:stretch;}
+  }
 
   .winner-banner{
     text-align:center; font-size:22px; font-weight:800; color:var(--gold);
@@ -175,7 +201,10 @@
 
           <div id="guess-area" class="hidden">
             <div class="guess-form">
-              <input id="guess-input" type="text" placeholder="Your guess (player name)" maxlength="60">
+              <div class="answer-wrap">
+                <input id="guess-input" class="answer-input" type="text" placeholder="Search for a player&hellip;" maxlength="60" autocomplete="off">
+                <div class="answer-results" id="guess-results"></div>
+              </div>
               <button id="guess-btn">Lock In</button>
             </div>
             <div class="status-line" id="guess-status"></div>
@@ -216,6 +245,7 @@
   const wheelRotation = { year:0, stat:0, rank:0 };
   const SPIN_MS = 5000;
   const EXTRA_SPINS = 5; // full extra rotations added purely for visual effect
+  let guessSearchTimer = null;
 
   const el = id => document.getElementById(id);
   const lobbyPanel = el('lobby-panel'), roomPanel = el('room-panel');
@@ -439,6 +469,37 @@
     el('face-rank').textContent = rank;
   }
 
+  // ---- Player name search / autocomplete ---------------------------------
+
+  async function searchGuessPlayers(query){
+    const results = el('guess-results');
+    if(!query || query.length < 2){ results.classList.remove('open'); results.innerHTML = ''; return; }
+    try {
+      const resp = await fetch(`${API_BASE}/api/players/search?q=${encodeURIComponent(query)}`);
+      const players = await resp.json();
+      if(!players.length){
+        results.innerHTML = '<div class="answer-no-results">No player matches</div>';
+      } else {
+        results.innerHTML = players.map((p) =>
+          `<button type="button" class="answer-result" data-name="${escapeHtml(p.display_name)}">
+             <strong>${escapeHtml(p.display_name)}</strong>
+             <span>${escapeHtml(p.position || '')} &middot; ${escapeHtml(p.years_label || '')} &middot; ${escapeHtml(p.teams_label || '')}</span>
+           </button>`
+        ).join('');
+        results.querySelectorAll('.answer-result').forEach((item) => {
+          item.addEventListener('click', () => {
+            el('guess-input').value = item.dataset.name;
+            results.classList.remove('open');
+            el('guess-input').focus();
+          });
+        });
+      }
+      results.classList.add('open');
+    } catch(err){
+      results.classList.remove('open');
+    }
+  }
+
   // ---- Wheel slice rendering + spinning ----------------------------------
 
   function buildSlices(key, options){
@@ -450,7 +511,7 @@
     if(container.dataset.signature === signature) return;
     container.dataset.signature = signature;
     container.innerHTML = '';
-    container.classList.toggle('slices-few', options.length <= 6);
+    container.classList.toggle('slices-many', options.length > 14);
 
     const total = options.length;
     const sliceDeg = 360 / total;
@@ -462,7 +523,7 @@
     });
     container.style.background = `conic-gradient(${stops.join(',')})`;
 
-    const radius = total > 14 ? 70 : 62;
+    const radius = total > 14 ? 108 : 96;
     options.forEach((opt, i) => {
       const angle = i * sliceDeg + sliceDeg / 2;
       const label = document.createElement('div');
@@ -539,12 +600,21 @@
   el('advance-btn').addEventListener('click', () => send({type:'advance_round'}));
   el('guess-btn').addEventListener('click', () => {
     const val = el('guess-input').value.trim();
-    if(!val){ el('guess-error').textContent = 'Enter a guess.'; return; }
+    if(!val){ el('guess-error').textContent = 'Enter or select a player.'; return; }
     el('guess-error').textContent = '';
+    el('guess-results').classList.remove('open');
     send({type:'submit_guess', guess: val});
   });
   el('guess-input').addEventListener('keydown', (e) => {
     if(e.key === 'Enter'){ el('guess-btn').click(); }
+  });
+  el('guess-input').addEventListener('input', (e) => {
+    clearTimeout(guessSearchTimer);
+    const val = e.target.value;
+    guessSearchTimer = setTimeout(() => searchGuessPlayers(val), 200);
+  });
+  document.addEventListener('click', (e) => {
+    if(!e.target.closest('.answer-wrap')){ el('guess-results').classList.remove('open'); }
   });
 })();
 </script>
