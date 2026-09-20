@@ -9,12 +9,23 @@
 --  defensive positions instead of filtering them out, and pulls def_sacks
 --  from nflreadpy's load_player_stats(), which already includes defensive
 --  box-score stats computed via nflfastR::calculate_player_stats_def()).
+--
+--  NOTE: this uses DROP VIEW + CREATE VIEW rather than CREATE OR REPLACE
+--  VIEW. Postgres only allows CREATE OR REPLACE VIEW to APPEND new columns
+--  at the end of the existing column list -- it can't insert one earlier
+--  in the list, since it matches old-vs-new columns by ordinal position.
+--  def_sacks sits before the existing fantasy_pts_* columns here, so
+--  CREATE OR REPLACE VIEW would fail with "cannot change name of view
+--  column ... to def_sacks". This view has no dependent objects in this
+--  schema, so dropping and recreating it is safe.
 -- ============================================================
 
 ALTER TABLE player_stats_weekly   ADD COLUMN IF NOT EXISTS def_sacks REAL;
 ALTER TABLE player_stats_seasonal ADD COLUMN IF NOT EXISTS def_sacks REAL;
 
-CREATE OR REPLACE VIEW trivia_player_seasons AS
+DROP VIEW IF EXISTS trivia_player_seasons;
+
+CREATE VIEW trivia_player_seasons AS
 SELECT
     p.player_id,
     p.display_name,
