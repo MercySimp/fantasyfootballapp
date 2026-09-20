@@ -14,9 +14,11 @@ season comes up -- direct or mystery-resolved -- is permanently removed
 from the pool. Since every one of the 25 seasons (2000-2024) is used
 exactly once over the life of a room, the game runs for exactly 25 rounds.
 
-Wheel 2 (stat category): 10 categories, repeatable every round. Sacks is
-intentionally excluded -- there is no defensive-player data in
-trivia_player_seasons yet.
+Wheel 2 (stat category): 11 categories, repeatable every round. Sacks was
+previously excluded because trivia_player_seasons had no defensive-player
+data; import_data.py now imports defensive positions and def_sacks (sourced
+from nflreadpy's load_player_stats(), which includes nflverse's defensive
+box-score stats), so sacks is included here.
 
 Wheel 3 (rank): 10-35, repeatable every round.
 
@@ -45,6 +47,7 @@ STAT_DEFINITIONS = {
     "all_purpose_yards": (FORMULA_SQL["scrimmage_yards"], "All-Purpose Yards"),
     "receptions": ("receptions", "Receptions"),
     "rushing_attempts": ("rushing_attempts", "Rushing Attempts"),
+    "sacks": ("def_sacks", "Sacks"),
 }
 
 YEARS_PRIMARY = list(range(2014, 2025))       # 2014-2024, 11 direct segments

@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS player_stats_weekly (
     -- Rushing
     carries                 SMALLINT,
     rushing_yards           REAL,
-    rushing_tds             SMALLINT,
+    rushing_tds              SMALLINT,
     rushing_fumbles         SMALLINT,
     rushing_fumbles_lost    SMALLINT,
     rushing_first_downs     SMALLINT,
@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS player_stats_weekly (
     wopr                    REAL,
     -- Special Teams
     special_teams_tds       SMALLINT,
+    -- Defense
+    def_sacks               REAL,
     created_at              TIMESTAMPTZ DEFAULT now(),
     UNIQUE (player_id, season, week, season_type)
 );
@@ -182,6 +184,8 @@ CREATE TABLE IF NOT EXISTS player_stats_seasonal (
     receiving_2pt_conversions SMALLINT,
     -- Special Teams
     special_teams_tds       SMALLINT,
+    -- Defense
+    def_sacks               REAL,
     created_at              TIMESTAMPTZ DEFAULT now(),
     UNIQUE (player_id, season, season_type)
 );
@@ -281,6 +285,8 @@ SELECT
     s.receiving_tds,
     s.receptions,
     s.targets,
+    -- Defense
+    s.def_sacks,
     -- Fantasy scores (all three formats)
     std.fantasy_points  AS fantasy_pts_standard,
     std.fantasy_ppg     AS fantasy_ppg_standard,
@@ -295,4 +301,3 @@ LEFT JOIN fantasy_scores_seasonal std  ON p.player_id = std.player_id AND s.seas
 LEFT JOIN fantasy_scores_seasonal hppr ON p.player_id = hppr.player_id AND s.season = hppr.season AND hppr.format_id = 'half_ppr' AND hppr.season_type = 'REG'
 LEFT JOIN fantasy_scores_seasonal ppr  ON p.player_id = ppr.player_id  AND s.season = ppr.season  AND ppr.format_id = 'ppr'      AND ppr.season_type = 'REG'
 WHERE s.season_type = 'REG';
-

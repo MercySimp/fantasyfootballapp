@@ -57,6 +57,16 @@ SCORING_FORMATS = {
                 fumble=-2, st_td=6),
 }
 
+# Defensive position codes as labeled by nflverse. These players carry no
+# offensive fantasy scoring, but load_player_stats() now returns their
+# defensive box-score stats (def_sacks, def_tackles, etc.) in the same file
+# as offense/kicking, computed via nflfastR::calculate_player_stats_def().
+# Importing them lets trivia games (e.g. Triple Threat) query real sack
+# totals instead of treating defense as entirely out of scope.
+DEFENSIVE_POSITIONS = {
+    "DE", "DT", "LB", "CB", "S", "NT", "OLB", "ILB", "MLB", "FS", "SS", "EDGE", "DL", "DB",
+}
+
 
 def get_conn():
     return psycopg2.connect(**DB_CONFIG)
@@ -269,9 +279,15 @@ def import_weekly_stats(conn, seasons):
         log.error("Failed to load weekly stats: %s", exc)
         return
 
+    # nflreadpy's load_player_stats() now returns offense, defense, and
+    # kicking stats in one combined file (the old stat_type="defense" split
+    # is deprecated). Keep both the existing offensive skill positions AND
+    # defensive positions so def_sacks (and future defensive columns) can be
+    # captured for defensive players instead of being filtered out entirely.
     fantasy_positions = {"QB", "RB", "WR", "TE", "FB", "HB"}
+    keep_positions = fantasy_positions | DEFENSIVE_POSITIONS
     if "position" in df.columns:
-        df = df[df["position"].isin(fantasy_positions)]
+        df = df[df["position"].isin(keep_positions)]
 
     log.info("  Processing %d weekly rows …", len(df))
     existing_player_ids = get_existing_player_ids(conn)
@@ -336,6 +352,7 @@ def import_weekly_stats(conn, seasons):
             safe_float(r.get("air_yards_share")),
             safe_float(r.get("wopr")),
             safe_int(r.get("special_teams_tds")),
+            safe_float(r.get("def_sacks")),
         ))
 
     rows = [r for r in rows if r[0] and r[5] and r[6]]
@@ -365,7 +382,8 @@ def import_weekly_stats(conn, seasons):
                 receiving_fumbles, receiving_fumbles_lost, receiving_air_yards,
                 receiving_yards_after_catch, receiving_first_downs,
                 receiving_epa, receiving_2pt_conversions,
-                racr, target_share, air_yards_share, wopr, special_teams_tds
+                racr, target_share, air_yards_share, wopr, special_teams_tds,
+                def_sacks
             ) VALUES %s
             ON CONFLICT (player_id, season, week, season_type) DO UPDATE SET
                 player_name      = EXCLUDED.player_name,
@@ -413,7 +431,8 @@ def import_weekly_stats(conn, seasons):
                 target_share     = EXCLUDED.target_share,
                 air_yards_share  = EXCLUDED.air_yards_share,
                 wopr             = EXCLUDED.wopr,
-                special_teams_tds = EXCLUDED.special_teams_tds
+                special_teams_tds = EXCLUDED.special_teams_tds,
+                def_sacks        = EXCLUDED.def_sacks
         """, rows, page_size=500)
     conn.commit()
     log.info("  → %d weekly stat rows upserted", len(rows))
@@ -434,7 +453,7 @@ def build_seasonal_stats(conn, seasons):
                 rushing_fumbles_lost, rushing_2pt_conversions,
                 receptions, targets, receiving_yards, receiving_tds,
                 receiving_fumbles_lost, receiving_2pt_conversions,
-                special_teams_tds
+                special_teams_tds, def_sacks
             )
             SELECT
                 player_id,
@@ -464,7 +483,8 @@ def build_seasonal_stats(conn, seasons):
                 COALESCE(SUM(receiving_tds),0),
                 COALESCE(SUM(receiving_fumbles_lost),0),
                 COALESCE(SUM(receiving_2pt_conversions),0),
-                COALESCE(SUM(special_teams_tds),0)
+                COALESCE(SUM(special_teams_tds),0),
+                COALESCE(SUM(def_sacks),0)
             FROM player_stats_weekly
             WHERE season IN ({season_filter})
             GROUP BY player_id, season, season_type
@@ -493,7 +513,8 @@ def build_seasonal_stats(conn, seasons):
                 receiving_tds         = EXCLUDED.receiving_tds,
                 receiving_fumbles_lost = EXCLUDED.receiving_fumbles_lost,
                 receiving_2pt_conversions = EXCLUDED.receiving_2pt_conversions,
-                special_teams_tds     = EXCLUDED.special_teams_tds
+                special_teams_tds     = EXCLUDED.special_teams_tds,
+                def_sacks             = EXCLUDED.def_sacks
         """)
     conn.commit()
     log.info("  → seasonal aggregation complete for %s", seasons)
