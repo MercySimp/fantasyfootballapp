@@ -669,6 +669,17 @@
   }
 
   // ---- Wheel slice rendering + spinning ----------------------------------
+  //
+  // Each label is positioned with a rotate() by its own fixed slice angle
+  // (baseAngle) followed by a translateY() that pushes it out to the ring
+  // -- this positioning rotation is left untouched by anything below, so
+  // the label always tracks its slice as the wheel (the .wheel-slices
+  // parent) spins. A SECOND, separate rotate() afterward only corrects the
+  // TEXT's own orientation so it reads right-side up: it cancels out the
+  // label's total on-screen angle (its slice angle plus the wheel's
+  // current resting rotation), optionally adding 180 degrees if that
+  // total angle falls in the bottom half of the circle, so the flip never
+  // moves the label itself -- only how its text is rotated in place.
 
   function buildSlices(key, options){
     const container = el(`slices-${key}`);
@@ -697,20 +708,22 @@
       label.textContent = opt;
       label.dataset.angle = String(angle);
       label.dataset.radius = String(radius);
-      label.style.transform =
-        `translate(-50%,-50%) rotate(${angle}deg) translateY(-${radius}px) rotate(${-angle}deg)`;
       container.appendChild(label);
     });
-    // The wheel may already be mid-rotation from a previous round (its
-    // rotation never resets to 0) -- re-orient freshly-built labels for
-    // the ring's CURRENT resting angle so they don't render upside down.
+    // Set each label's correct text-orientation for the ring's CURRENT
+    // resting rotation (it may already be mid-rotation from a prior round,
+    // since rotation never resets to 0 between spins).
     fixLabelOrientation(key);
   }
 
-  // After a slice's rendered angle (its build angle + the wheel's current
-  // resting rotation) falls in the bottom half of the circle, its text
-  // would otherwise appear upside down. Flip those labels by 180 degrees
-  // so every slice stays readable no matter where the wheel stopped.
+  // Re-applies each label's transform: the FIRST rotate+translateY (using
+  // only the label's own fixed slice angle) determines its position and is
+  // always identical to build time, so it keeps tracking its slice as the
+  // wheel spins. The SECOND rotate corrects the text's own orientation for
+  // the wheel's current resting rotation, flipping 180 degrees if the
+  // label's total on-screen angle falls in the bottom half of the circle
+  // -- this only changes how the text is rotated in place, never where the
+  // label itself sits.
   function fixLabelOrientation(key){
     const container = el(`slices-${key}`);
     if(!container) return;
@@ -720,9 +733,9 @@
       const radius = parseFloat(label.dataset.radius || '0');
       const totalAngle = ((baseAngle + finalMod) % 360 + 360) % 360;
       const flip = (totalAngle > 90 && totalAngle < 270) ? 180 : 0;
-      const localAngle = baseAngle + flip;
+      const textCorrection = -totalAngle + flip;
       label.style.transform =
-        `translate(-50%,-50%) rotate(${localAngle}deg) translateY(-${radius}px) rotate(${-localAngle}deg)`;
+        `translate(-50%,-50%) rotate(${baseAngle}deg) translateY(-${radius}px) rotate(${textCorrection}deg)`;
     });
   }
 
