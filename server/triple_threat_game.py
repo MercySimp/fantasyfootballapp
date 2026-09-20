@@ -1,12 +1,12 @@
 """Triple Threat: 3-wheel year/stat/rank multiplayer trivia game.
 
 Each round spins all three wheels at once to produce one shared prompt:
-a season, a stat category, and a leaderboard rank (e.g. "2017 sacks... no,
-2017 rushing yards, rank 10"). Every connected player privately submits a
-guess for who they think finished at that rank in that stat that season.
-Guesses are hidden from other players until everyone has answered, then the
-round is revealed and scored for the whole room at once -- nobody sees
-anyone else's guess (or the target) before that reveal.
+a season, a stat category, and a leaderboard rank (e.g. "2017 rushing
+yards, rank 10"). Every connected player privately submits a guess for who
+they think finished at that rank in that stat that season. Guesses are
+hidden from other players until everyone has answered, then the round is
+revealed and scored for the whole room at once -- nobody sees anyone
+else's guess (or the target) before that reveal.
 
 Wheel 1 (season): 2014-2024 (11 direct segments) plus one MYSTERY segment
 that, when spun, draws a random unused season from 2000-2013. Whichever
@@ -22,11 +22,13 @@ box-score stats), so sacks is included here.
 
 Wheel 3 (rank): 10-35, repeatable every round.
 
-Scoring: guessing the exact correct player scores -5 points (by design --
-this game rewards calculated close guesses over "safe" exact locks).
-Otherwise points fall off with the distance between the guessed player's
-real rank in that same season/category leaderboard and the target rank. A
-guess for a player who isn't on that leaderboard at all scores 0.
+Scoring: points equal the absolute distance between the guessed player's
+real rank on that season/category leaderboard and the target rank -- e.g.
+the wheel lands on rank 16 and you guess a player who actually finished
+6th, that's |16 - 6| = 10 points. Guessing the exact correct player (a
+"safe lock") scores 0 -- by design, this rewards calculated near-misses
+over playing it safe. A guess for a player who isn't on that leaderboard
+at all also scores 0.
 """
 
 import random
@@ -50,6 +52,12 @@ STAT_DEFINITIONS = {
     "sacks": ("def_sacks", "Sacks"),
 }
 
+# Fixed display order for the stat wheel's slices -- constant every round,
+# since (unlike the year wheel) stat categories are never removed from the
+# pool. Sent to clients so the wheel can render every possible outcome as
+# a slice, not just the one that was spun.
+STAT_WHEEL_OPTIONS = [label for (_column, label) in STAT_DEFINITIONS.values()]
+
 YEARS_PRIMARY = list(range(2014, 2025))       # 2014-2024, 11 direct segments
 YEARS_MYSTERY_POOL = list(range(2000, 2014))  # 2000-2013, mystery-gated
 MYSTERY_LABEL = "MYSTERY"
@@ -58,9 +66,6 @@ TOTAL_ROUNDS = len(YEARS_PRIMARY) + len(YEARS_MYSTERY_POOL)  # 25
 RANK_MIN, RANK_MAX = 10, 35
 RANK_RANGE = list(range(RANK_MIN, RANK_MAX + 1))
 
-EXACT_MATCH_PENALTY = -5
-MAX_CLOSE_GUESS_POINTS = 20
-POINTS_PER_RANK_STEP = 2
 NOT_FOUND_POINTS = 0
 MIN_QUALIFYING_ROWS = RANK_MAX  # need at least 35 rows to resolve any rank 10-35
 
@@ -89,17 +94,14 @@ def _get_leaderboard(cur, year: int, stat_key: str):
     return cur.fetchall()
 
 
-def score_guess(target_rank: int, target_player_id, guessed_player_id, guessed_rank: Optional[int]) -> int:
-    if guessed_player_id is not None and guessed_player_id == target_player_id:
-        return EXACT_MATCH_PENALTY
+def score_guess(target_rank: int, guessed_rank: Optional[int]) -> int:
+    """Points = absolute distance between the guessed player's real rank
+    and the target rank. Exact match and "not on the leaderboard" both
+    score 0 -- the former by design (no reward for playing it safe), the
+    latter because there's no real rank to measure a distance from."""
     if guessed_rank is None:
         return NOT_FOUND_POINTS
-    diff = abs(guessed_rank - target_rank)
-    if diff == 0:
-        # Same rank slot but somehow a different player id (shouldn't happen
-        # with clean data) -- treat as an exact hit for scoring purposes.
-        return EXACT_MATCH_PENALTY
-    return max(MAX_CLOSE_GUESS_POINTS - (POINTS_PER_RANK_STEP * diff), 1)
+    return abs(guessed_rank - target_rank)
 
 
 class YearWheelState:
@@ -164,6 +166,11 @@ def _room_public_state(room):
             "rank": round_["rank"],
             "revealed": round_["revealed"],
             "players_answered": list(round_["guesses"]),
+            # The set of segments that existed on the year wheel at the
+            # moment this round was spun (before that segment was removed
+            # from the pool), so the client can render every possible
+            # outcome as a slice, not just the one that landed.
+            "year_wheel_options": round_["year_wheel_options"],
         }
         if round_["revealed"]:
             public_round["target_player"] = round_["target_player"]
@@ -176,6 +183,8 @@ def _room_public_state(room):
         "round_index": room["round_index"],
         "total_rounds": TOTAL_ROUNDS,
         "wheel": room["year_wheel"].to_dict(),
+        "stat_wheel_options": STAT_WHEEL_OPTIONS,
+        "rank_wheel_options": RANK_RANGE,
         "current_round": public_round,
         "history": room["history"],
         "winner": room["winner"],
@@ -266,6 +275,11 @@ def start_room(conn, room, display_name):
 
 
 def _spin_new_round(conn, room):
+    # Snapshot the year wheel's available segments BEFORE spinning, so the
+    # client can render the full set of possible outcomes for this round
+    # (the wheel object itself removes the drawn year immediately below).
+    year_wheel_options = room["year_wheel"].available_segments()
+
     with conn.cursor() as cur:
         year, was_mystery = room["year_wheel"].spin()
         stat_key, rank, rows, target = _select_round(cur, year)
@@ -283,6 +297,7 @@ def _spin_new_round(conn, room):
         "guesses": {},
         "revealed": False,
         "results": None,
+        "year_wheel_options": year_wheel_options,
     }
 
 
@@ -318,13 +333,11 @@ def _reveal_round(room):
         normalized = _normalize_name(guess_text)
         matched = by_normalized.get(normalized)
         guessed_rank = None
-        guessed_player_id = None
         guessed_display = guess_text
         if matched:
-            guessed_player_id = matched["player_id"]
             guessed_display = matched["display_name"]
             guessed_rank = rows.index(matched) + 1
-        points = score_guess(round_["rank"], round_["target_player_id"], guessed_player_id, guessed_rank)
+        points = score_guess(round_["rank"], guessed_rank)
         room["players"][display_name]["score"] += points
         results[display_name] = {
             "guess": guessed_display,
