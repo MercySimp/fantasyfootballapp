@@ -90,6 +90,14 @@ class DartsJoinRequest(BaseModel):
 
 class CreateTripleThreatRoomRequest(BaseModel):
     is_public: bool = False
+    year_start: int = 2014
+    year_end: int = 2024
+    mystery_enabled: bool = True
+    mystery_start: int = 2000
+    mystery_end: int = 2013
+    rank_min: int = 10
+    rank_max: int = 35
+    stat_keys: List[str] = []
 
 
 class TripleThreatJoinRequest(BaseModel):
@@ -332,9 +340,27 @@ def darts_room_info(code: str):
     return darts_game._room_public_state(room)
 
 
+@app.get("/api/triple-threat/stat-options")
+def triple_threat_stat_options():
+    return [
+        {"key": key, "label": triple_threat_game.STAT_DEFINITIONS[key][1]}
+        for key in triple_threat_game.STAT_KEY_ORDER
+    ]
+
+
 @app.post("/api/triple-threat/rooms")
 def create_triple_threat_room(request: CreateTripleThreatRoomRequest):
-    room = triple_threat_game.create_room(request.is_public)
+    settings = {
+        "year_start": request.year_start,
+        "year_end": request.year_end,
+        "mystery_enabled": request.mystery_enabled,
+        "mystery_start": request.mystery_start,
+        "mystery_end": request.mystery_end,
+        "rank_min": request.rank_min,
+        "rank_max": request.rank_max,
+        "stat_keys": request.stat_keys,
+    }
+    room = triple_threat_game.create_room(request.is_public, settings)
     return triple_threat_game._room_public_state(room)
 
 
@@ -409,6 +435,7 @@ async def triple_threat_socket(websocket: WebSocket, code: str, display_name: st
                     if room["status"] == "complete":
                         await broadcast("game_complete")
                 else:
+                    # Acknowledge privately -- don't leak who's answered what.
                     await websocket.send_json({"type": "guess_received"})
                     await broadcast("room_state")
 

@@ -21,10 +21,12 @@
 
   .panel{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:20px;}
   .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
-  input[type=text]{
+  input[type=text], input[type=number]{
     background:var(--panel2); border:1px solid var(--border); color:var(--text);
-    padding:10px 12px; border-radius:8px; font-size:14px; min-width:180px;
+    padding:10px 12px; border-radius:8px; font-size:14px;
   }
+  input[type=text]{min-width:180px;}
+  input[type=number]{width:100px;}
   label.chk{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted);}
   button{
     background:var(--accent); color:#04140d; border:none; padding:10px 18px;
@@ -35,6 +37,36 @@
   .error{color:var(--bad); font-size:13px; margin-top:8px; min-height:16px;}
 
   .hidden{display:none !important;}
+
+  /* Lobby / settings cards */
+  .settings-stack{display:flex; flex-direction:column; gap:16px;}
+  .settings-card{background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:16px 18px;}
+  .settings-card h3{margin:0 0 4px; font-size:14px; letter-spacing:0.6px; text-transform:uppercase; color:var(--accent2);}
+  .settings-card p.hint{margin:0 0 12px; color:var(--muted); font-size:12px;}
+  .field-row{display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;}
+  .field{display:flex; flex-direction:column; gap:4px;}
+  .field label{font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted);}
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;}
+  .toggle-row .toggle-label{font-size:13px; color:var(--text); font-weight:600;}
+  .switch{
+    width:42px; height:24px; border-radius:20px; background:var(--border); position:relative;
+    cursor:pointer; flex-shrink:0; transition:background .15s;
+  }
+  .switch.on{background:var(--accent);}
+  .switch::after{
+    content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%;
+    background:#fff; transition:transform .15s;
+  }
+  .switch.on::after{transform:translateX(18px);}
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px;}
+  .stat-chip{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px;
+    background:var(--panel); border:1px solid var(--border); font-size:13px; cursor:pointer; user-select:none;
+  }
+  .stat-chip.active{border-color:var(--accent2); background:#123047;}
+  .stat-chip input{accent-color:var(--accent2);}
+  .stat-actions{display:flex; gap:8px; margin-top:10px;}
+  .stat-actions button{padding:6px 12px; font-size:12px;}
 
   /* Wheel row */
   .wheels{display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:20px 0 14px;}
@@ -106,6 +138,7 @@
   th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--border);}
   th{color:var(--muted); font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:1px;}
   tr.you td{color:var(--accent2);}
+  tr.target-row td{color:var(--gold); font-weight:700;}
   .pts-pos{color:var(--accent); font-weight:700;}
   .pts-neg{color:var(--bad); font-weight:700;}
   .pts-zero{color:var(--muted); font-weight:700;}
@@ -133,6 +166,7 @@
     padding:16px; border:2px dashed var(--gold); border-radius:12px; margin-bottom:16px;
   }
   code{background:var(--panel2); padding:2px 6px; border-radius:4px; color:var(--accent2);}
+  .reveal-section-label{color:var(--muted); font-size:12px; letter-spacing:0.6px; text-transform:uppercase; margin:18px 0 8px;}
 </style>
 </head>
 <body>
@@ -141,14 +175,59 @@
   <p class="subtitle">Spin a season, a stat, and a rank &mdash; guess who finished there. Closer misses score more than exact hits.</p>
 
   <!-- LOBBY -->
-  <div id="lobby-panel" class="panel">
-    <div class="row">
-      <input id="name-input" type="text" placeholder="Display name" maxlength="40">
-      <input id="room-input" type="text" placeholder="Room code (leave blank to create)" maxlength="10" style="text-transform:uppercase;">
-      <label class="chk"><input id="public-check" type="checkbox"> Public room</label>
-      <button id="join-btn">Join / Create Room</button>
+  <div id="lobby-panel">
+    <div class="panel">
+      <h3 style="margin-top:0;">Player</h3>
+      <div class="row">
+        <input id="name-input" type="text" placeholder="Display name" maxlength="40">
+        <input id="room-input" type="text" placeholder="Room code (leave blank to create)" maxlength="10" style="text-transform:uppercase;">
+        <label class="chk"><input id="public-check" type="checkbox"> Public room</label>
+      </div>
+      <p class="hint" style="margin-top:8px;">Leave the room code blank to create a new room using the wheel settings below. Enter a code to join an existing room (its settings are already locked in).</p>
     </div>
-    <div id="lobby-error" class="error"></div>
+
+    <div class="settings-stack">
+      <div class="settings-card">
+        <h3>Season Wheel</h3>
+        <p class="hint">Direct seasons spin every round. Mystery, if enabled, can only be picked once per room and draws a random season from its own range.</p>
+        <div class="field-row">
+          <div class="field"><label for="year-start">Start Year</label><input id="year-start" type="number" value="2014" min="1970" max="2025"></div>
+          <div class="field"><label for="year-end">End Year</label><input id="year-end" type="number" value="2024" min="1970" max="2025"></div>
+        </div>
+        <div class="toggle-row" style="margin-top:14px;">
+          <span class="toggle-label">Include Mystery Year</span>
+          <div class="switch on" id="mystery-toggle"></div>
+        </div>
+        <div class="field-row" id="mystery-range-row">
+          <div class="field"><label for="mystery-start">Mystery Pool Start</label><input id="mystery-start" type="number" value="2000" min="1970" max="2025"></div>
+          <div class="field"><label for="mystery-end">Mystery Pool End</label><input id="mystery-end" type="number" value="2013" min="1970" max="2025"></div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Rank Wheel</h3>
+        <p class="hint">The target rank each round is drawn from this range.</p>
+        <div class="field-row">
+          <div class="field"><label for="rank-min">Min Rank</label><input id="rank-min" type="number" value="10" min="1" max="60"></div>
+          <div class="field"><label for="rank-max">Max Rank</label><input id="rank-max" type="number" value="35" min="1" max="60"></div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Stat Wheel</h3>
+        <p class="hint">Choose which stat categories can come up. At least one must stay selected.</p>
+        <div class="stat-grid" id="stat-grid"></div>
+        <div class="stat-actions">
+          <button type="button" class="secondary" id="stats-select-all">Select All</button>
+          <button type="button" class="secondary" id="stats-select-none">Select None</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <button id="join-btn">Join / Create Room</button>
+      <div id="lobby-error" class="error"></div>
+    </div>
   </div>
 
   <!-- ROOM -->
@@ -214,7 +293,12 @@
           <div id="reveal-area" class="hidden">
             <div class="prompt-sub">Round result</div>
             <table id="reveal-table">
-              <thead><tr><th>Player</th><th>Guess</th><th>Rank Guessed</th><th>Points</th></tr></thead>
+              <thead><tr><th>Player</th><th>Guess</th><th>Rank Guessed</th><th>Stat Total</th><th>Points</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="reveal-section-label">Leaderboard around the answer</div>
+            <table id="nearby-table">
+              <thead><tr><th>Rank</th><th>Player</th><th>Stat Total</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -246,6 +330,9 @@
   const SPIN_MS = 5000;
   const EXTRA_SPINS = 5; // full extra rotations added purely for visual effect
   let guessSearchTimer = null;
+  let mysteryEnabled = true;
+  let statOptions = []; // [{key,label}]
+  let selectedStatKeys = new Set();
 
   const el = id => document.getElementById(id);
   const lobbyPanel = el('lobby-panel'), roomPanel = el('room-panel');
@@ -254,6 +341,75 @@
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     return `${proto}://${location.host}/ws/triple-threat/${encodeURIComponent(code)}?display_name=${encodeURIComponent(name)}`;
   }
+
+  // ---- Lobby settings ------------------------------------------------------
+
+  el('mystery-toggle').addEventListener('click', () => {
+    mysteryEnabled = !mysteryEnabled;
+    el('mystery-toggle').classList.toggle('on', mysteryEnabled);
+    el('mystery-range-row').style.opacity = mysteryEnabled ? '1' : '0.4';
+    el('mystery-start').disabled = !mysteryEnabled;
+    el('mystery-end').disabled = !mysteryEnabled;
+  });
+
+  async function loadStatOptions(){
+    try {
+      const resp = await fetch(`${API_BASE}/api/triple-threat/stat-options`);
+      statOptions = await resp.json();
+    } catch(err){
+      statOptions = [];
+    }
+    selectedStatKeys = new Set(statOptions.map((s) => s.key));
+    renderStatGrid();
+  }
+
+  function renderStatGrid(){
+    const grid = el('stat-grid');
+    grid.innerHTML = statOptions.map((s) => `
+      <label class="stat-chip${selectedStatKeys.has(s.key) ? ' active' : ''}" data-key="${s.key}">
+        <input type="checkbox" ${selectedStatKeys.has(s.key) ? 'checked' : ''}>
+        ${escapeHtml(s.label)}
+      </label>
+    `).join('');
+    grid.querySelectorAll('.stat-chip').forEach((chip) => {
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        const key = chip.dataset.key;
+        if(selectedStatKeys.has(key)){
+          if(selectedStatKeys.size === 1) return; // keep at least one selected
+          selectedStatKeys.delete(key);
+        } else {
+          selectedStatKeys.add(key);
+        }
+        renderStatGrid();
+      });
+    });
+  }
+
+  el('stats-select-all').addEventListener('click', () => {
+    selectedStatKeys = new Set(statOptions.map((s) => s.key));
+    renderStatGrid();
+  });
+  el('stats-select-none').addEventListener('click', () => {
+    if(!statOptions.length) return;
+    selectedStatKeys = new Set([statOptions[0].key]);
+    renderStatGrid();
+  });
+
+  function collectRoomSettings(){
+    return {
+      year_start: parseInt(el('year-start').value, 10) || 2014,
+      year_end: parseInt(el('year-end').value, 10) || 2024,
+      mystery_enabled: mysteryEnabled,
+      mystery_start: parseInt(el('mystery-start').value, 10) || 2000,
+      mystery_end: parseInt(el('mystery-end').value, 10) || 2013,
+      rank_min: parseInt(el('rank-min').value, 10) || 10,
+      rank_max: parseInt(el('rank-max').value, 10) || 35,
+      stat_keys: Array.from(selectedStatKeys),
+    };
+  }
+
+  // ---- Room join/create -----------------------------------------------
 
   async function createOrJoinRoom(){
     const name = el('name-input').value.trim();
@@ -264,9 +420,10 @@
 
     try {
       if(!code){
+        const body = Object.assign({ is_public: isPublic }, collectRoomSettings());
         const resp = await fetch(`${API_BASE}/api/triple-threat/rooms`, {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({is_public:isPublic})
+          body: JSON.stringify(body)
         });
         if(!resp.ok) throw new Error((await resp.json()).detail || 'Could not create room');
         const data = await resp.json();
@@ -393,7 +550,7 @@
       const answers = Object.entries(h.results).map(([name, r]) =>
         `${escapeHtml(name)}: ${escapeHtml(r.guess || '(no guess)')} &rarr; +${r.points}`
       ).join(' &middot; ');
-      div.innerHTML = `<div class="h-title">#${h.round_number} &mdash; ${yearLabel} ${escapeHtml(h.stat_label)}, Rank ${h.rank} &mdash; ${escapeHtml(h.target_player)}</div>
+      div.innerHTML = `<div class="h-title">#${h.round_number} &mdash; ${yearLabel} ${escapeHtml(h.stat_label)}, Rank ${h.rank} &mdash; ${escapeHtml(h.target_player)} (${h.target_value != null ? Math.round(h.target_value) : '?'})</div>
         <div class="h-answers">${answers}</div>`;
       container.appendChild(div);
     }
@@ -438,7 +595,7 @@
       }
     } else {
       bannerEl.textContent = `${round.target_player}`;
-      subEl.textContent = `was #${round.rank} in ${round.stat_label} in ${round.year}${round.was_mystery ? ' (mystery year)' : ''}.`;
+      subEl.textContent = `was #${round.rank} in ${round.stat_label} in ${round.year}${round.was_mystery ? ' (mystery year)' : ''} with ${round.target_value != null ? Math.round(round.target_value) : '?'}.`;
       guessArea.classList.add('hidden');
       showReveal();
     }
@@ -450,6 +607,7 @@
     if(!round || !round.revealed) return;
     const revealArea = el('reveal-area');
     revealArea.classList.remove('hidden');
+
     const tbody = document.querySelector('#reveal-table tbody');
     tbody.innerHTML = '';
     for(const [name, r] of Object.entries(round.results)){
@@ -458,9 +616,19 @@
       const ptsClass = r.points === 0 ? 'pts-zero' : 'pts-pos';
       tr.innerHTML = `<td>${escapeHtml(name)}</td><td>${escapeHtml(r.guess || '(no guess)')}</td>
         <td>${r.guessed_rank ? '#' + r.guessed_rank : '&mdash;'}</td>
+        <td>${r.guessed_value != null ? Math.round(r.guessed_value) : '&mdash;'}</td>
         <td class="${ptsClass}">${r.points}</td>`;
       tbody.appendChild(tr);
     }
+
+    const nearbyBody = document.querySelector('#nearby-table tbody');
+    nearbyBody.innerHTML = '';
+    (round.nearby_leaderboard || []).forEach((row) => {
+      const tr = document.createElement('tr');
+      if(row.rank === round.rank) tr.classList.add('target-row');
+      tr.innerHTML = `<td>#${row.rank}</td><td>${escapeHtml(row.player)}</td><td>${Math.round(row.value)}</td>`;
+      nearbyBody.appendChild(tr);
+    });
   }
 
   function setWheelFaces(year, stat, rank){
@@ -505,8 +673,6 @@
   function buildSlices(key, options){
     const container = el(`slices-${key}`);
     if(!options || !options.length){ container.innerHTML = ''; return; }
-    // Skip rebuilding (and thus resetting rotation/labels) if the option
-    // set hasn't actually changed since last render.
     const signature = options.join('|');
     if(container.dataset.signature === signature) return;
     container.dataset.signature = signature;
@@ -529,9 +695,34 @@
       const label = document.createElement('div');
       label.className = 'slice-label';
       label.textContent = opt;
+      label.dataset.angle = String(angle);
+      label.dataset.radius = String(radius);
       label.style.transform =
         `translate(-50%,-50%) rotate(${angle}deg) translateY(-${radius}px) rotate(${-angle}deg)`;
       container.appendChild(label);
+    });
+    // The wheel may already be mid-rotation from a previous round (its
+    // rotation never resets to 0) -- re-orient freshly-built labels for
+    // the ring's CURRENT resting angle so they don't render upside down.
+    fixLabelOrientation(key);
+  }
+
+  // After a slice's rendered angle (its build angle + the wheel's current
+  // resting rotation) falls in the bottom half of the circle, its text
+  // would otherwise appear upside down. Flip those labels by 180 degrees
+  // so every slice stays readable no matter where the wheel stopped.
+  function fixLabelOrientation(key){
+    const container = el(`slices-${key}`);
+    if(!container) return;
+    const finalMod = ((wheelRotation[key] % 360) + 360) % 360;
+    container.querySelectorAll('.slice-label').forEach((label) => {
+      const baseAngle = parseFloat(label.dataset.angle || '0');
+      const radius = parseFloat(label.dataset.radius || '0');
+      const totalAngle = ((baseAngle + finalMod) % 360 + 360) % 360;
+      const flip = (totalAngle > 90 && totalAngle < 270) ? 180 : 0;
+      const localAngle = baseAngle + flip;
+      label.style.transform =
+        `translate(-50%,-50%) rotate(${localAngle}deg) translateY(-${radius}px) rotate(${-localAngle}deg)`;
     });
   }
 
@@ -551,8 +742,6 @@
     const targetAngle = angleForIndex(index, total);
     const current = wheelRotation[key] || 0;
     const currentMod = ((current % 360) + 360) % 360;
-    // Rotation needed so the target slice's center lands under the fixed
-    // top pointer (0deg), always moving forward (never snapping back).
     let delta = (360 - targetAngle - currentMod + 360) % 360;
     if(delta === 0) delta = 360; // still spin a full turn even if already aligned
     const newRotation = current + EXTRA_SPINS * 360 + delta;
@@ -562,7 +751,10 @@
     container.style.transform = `rotate(${newRotation}deg)`;
     wheelRotation[key] = newRotation;
 
-    setTimeout(() => { ring.classList.remove('spinning'); }, SPIN_MS);
+    setTimeout(() => {
+      ring.classList.remove('spinning');
+      fixLabelOrientation(key);
+    }, SPIN_MS);
   }
 
   function spinAllWheels(){
@@ -579,7 +771,6 @@
     spinWheelTo('stat', room.stat_wheel_options || [], round.stat_label);
     spinWheelTo('rank', (room.rank_wheel_options || []).map(String), String(round.rank));
 
-    // Reveal the resolved face text only once the 5s spin animation ends.
     setTimeout(() => {
       setWheelFaces(
         round.was_mystery ? `${round.year}\u2605` : `${round.year}`,
@@ -616,6 +807,8 @@
   document.addEventListener('click', (e) => {
     if(!e.target.closest('.answer-wrap')){ el('guess-results').classList.remove('open'); }
   });
+
+  loadStatOptions();
 })();
 </script>
 </body>

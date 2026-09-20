@@ -8,19 +8,21 @@ hidden from other players until everyone has answered, then the round is
 revealed and scored for the whole room at once -- nobody sees anyone
 else's guess (or the target) before that reveal.
 
-Wheel 1 (season): 2014-2024 (11 direct segments) plus one MYSTERY segment
-that, when spun, draws a random unused season from 2000-2013. Whichever
-season comes up -- direct or mystery-resolved -- is permanently removed
-from the pool. Since every one of the 25 seasons (2000-2024) is used
-exactly once over the life of a room, the game runs for exactly 25 rounds.
+Wheel 1 (season): a configurable range of "direct" seasons (default
+2014-2024, 11 segments) plus one MYSTERY segment that, when spun, draws a
+random unused season from a configurable older pool (default 2000-2013)
+and is then permanently removed from the wheel -- mystery can only ever be
+selected ONCE per room, not repeatedly. A room therefore runs for exactly
+(number of direct seasons) + (1 if mystery is enabled else 0) rounds --
+12 rounds with the defaults.
 
-Wheel 2 (stat category): 11 categories, repeatable every round. Sacks was
-previously excluded because trivia_player_seasons had no defensive-player
-data; import_data.py now imports defensive positions and def_sacks (sourced
-from nflreadpy's load_player_stats(), which includes nflverse's defensive
-box-score stats), so sacks is included here.
+Wheel 2 (stat category): a configurable subset of the categories below,
+repeatable every round. Sacks requires def_sacks (defensive stats) to be
+imported via import_data.py; all-purpose yards reuses
+pick_engine.FORMULA_SQL["scrimmage_yards"].
 
-Wheel 3 (rank): 10-35, repeatable every round.
+Wheel 3 (rank): a configurable range (default 10-35), repeatable every
+round.
 
 Scoring: points equal the absolute distance between the guessed player's
 real rank on that season/category leaderboard and the target rank -- e.g.
@@ -52,22 +54,24 @@ STAT_DEFINITIONS = {
     "sacks": ("def_sacks", "Sacks"),
 }
 
-# Fixed display order for the stat wheel's slices -- constant every round,
-# since (unlike the year wheel) stat categories are never removed from the
-# pool. Sent to clients so the wheel can render every possible outcome as
-# a slice, not just the one that was spun.
-STAT_WHEEL_OPTIONS = [label for (_column, label) in STAT_DEFINITIONS.values()]
+# Fixed canonical order -- used to keep the stat wheel's slice order stable
+# regardless of what subset a room's settings enable.
+STAT_KEY_ORDER = list(STAT_DEFINITIONS.keys())
 
-YEARS_PRIMARY = list(range(2014, 2025))       # 2014-2024, 11 direct segments
-YEARS_MYSTERY_POOL = list(range(2000, 2014))  # 2000-2013, mystery-gated
 MYSTERY_LABEL = "MYSTERY"
-TOTAL_ROUNDS = len(YEARS_PRIMARY) + len(YEARS_MYSTERY_POOL)  # 25
-
-RANK_MIN, RANK_MAX = 10, 35
-RANK_RANGE = list(range(RANK_MIN, RANK_MAX + 1))
-
 NOT_FOUND_POINTS = 0
-MIN_QUALIFYING_ROWS = RANK_MAX  # need at least 35 rows to resolve any rank 10-35
+NEARBY_WINDOW = 3  # how many ranks above/below the target to show on reveal
+
+DEFAULT_YEAR_START = 2014
+DEFAULT_YEAR_END = 2024
+DEFAULT_MYSTERY_ENABLED = True
+DEFAULT_MYSTERY_START = 2000
+DEFAULT_MYSTERY_END = 2013
+DEFAULT_RANK_MIN = 10
+DEFAULT_RANK_MAX = 35
+
+MIN_YEAR, MAX_YEAR = 1970, 2025
+MIN_RANK_FLOOR, MAX_RANK_CEIL = 1, 60
 
 TRIPLE_THREAT_ROOMS = {}
 
@@ -88,8 +92,7 @@ def _leaderboard_query(stat_expr: str) -> str:
     """
 
 
-def _get_leaderboard(cur, year: int, stat_key: str):
-    stat_expr, _label = STAT_DEFINITIONS[stat_key]
+def _get_leaderboard(cur, year: int, stat_expr: str):
     cur.execute(_leaderboard_query(stat_expr), (year,))
     return cur.fetchall()
 
@@ -104,19 +107,80 @@ def score_guess(target_rank: int, guessed_rank: Optional[int]) -> int:
     return abs(guessed_rank - target_rank)
 
 
+def resolve_settings(raw_settings: Optional[dict]) -> dict:
+    """Validate and normalize room settings, filling in defaults for
+    anything missing or out of range. Never raises -- always returns a
+    usable settings dict."""
+    raw_settings = raw_settings or {}
+
+    def _clamp_int(value, default, low, high):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(low, min(high, value))
+
+    year_start = _clamp_int(raw_settings.get("year_start"), DEFAULT_YEAR_START, MIN_YEAR, MAX_YEAR)
+    year_end = _clamp_int(raw_settings.get("year_end"), DEFAULT_YEAR_END, MIN_YEAR, MAX_YEAR)
+    if year_start > year_end:
+        year_start, year_end = year_end, year_start
+
+    mystery_enabled = bool(raw_settings.get("mystery_enabled", DEFAULT_MYSTERY_ENABLED))
+    mystery_start = _clamp_int(raw_settings.get("mystery_start"), DEFAULT_MYSTERY_START, MIN_YEAR, MAX_YEAR)
+    mystery_end = _clamp_int(raw_settings.get("mystery_end"), DEFAULT_MYSTERY_END, MIN_YEAR, MAX_YEAR)
+    if mystery_start > mystery_end:
+        mystery_start, mystery_end = mystery_end, mystery_start
+
+    rank_min = _clamp_int(raw_settings.get("rank_min"), DEFAULT_RANK_MIN, MIN_RANK_FLOOR, MAX_RANK_CEIL)
+    rank_max = _clamp_int(raw_settings.get("rank_max"), DEFAULT_RANK_MAX, MIN_RANK_FLOOR, MAX_RANK_CEIL)
+    if rank_max < rank_min:
+        rank_min, rank_max = rank_max, rank_min
+    if rank_max == rank_min:
+        rank_max = min(MAX_RANK_CEIL, rank_min + 1)
+
+    requested_stats = raw_settings.get("stat_keys")
+    if isinstance(requested_stats, (list, tuple, set)):
+        chosen = {k for k in requested_stats if k in STAT_DEFINITIONS}
+    else:
+        chosen = set()
+    if not chosen:
+        chosen = set(STAT_KEY_ORDER)
+    stat_keys = [k for k in STAT_KEY_ORDER if k in chosen]
+
+    return {
+        "year_start": year_start,
+        "year_end": year_end,
+        "mystery_enabled": mystery_enabled,
+        "mystery_start": mystery_start,
+        "mystery_end": mystery_end,
+        "rank_min": rank_min,
+        "rank_max": rank_max,
+        "stat_keys": stat_keys,
+    }
+
+
 class YearWheelState:
-    def __init__(self):
-        self.remaining_primary = list(YEARS_PRIMARY)
-        self.remaining_mystery = list(YEARS_MYSTERY_POOL)
+    def __init__(self, settings: dict):
+        self.remaining_primary = list(range(settings["year_start"], settings["year_end"] + 1))
+        self._initial_primary_count = len(self.remaining_primary)
+        self.mystery_enabled = settings["mystery_enabled"]
+        self.remaining_mystery = (
+            list(range(settings["mystery_start"], settings["mystery_end"] + 1))
+            if self.mystery_enabled else []
+        )
+        self.mystery_used = False
+
+    def _mystery_available(self) -> bool:
+        return self.mystery_enabled and not self.mystery_used and bool(self.remaining_mystery)
 
     def available_segments(self):
         segments = [str(y) for y in self.remaining_primary]
-        if self.remaining_mystery:
+        if self._mystery_available():
             segments.append(MYSTERY_LABEL)
         return segments
 
     def is_exhausted(self) -> bool:
-        return not self.remaining_primary and not self.remaining_mystery
+        return not self.remaining_primary and not self._mystery_available()
 
     def spin(self):
         segments = self.available_segments()
@@ -126,36 +190,50 @@ class YearWheelState:
         if pick == MYSTERY_LABEL:
             year = random.choice(self.remaining_mystery)
             self.remaining_mystery.remove(year)
+            # Mystery can only ever be selected once per room -- remove it
+            # from the wheel permanently regardless of pool size left.
+            self.mystery_used = True
             return year, True
         year = int(pick)
         self.remaining_primary.remove(year)
         return year, False
 
+    def total_rounds(self) -> int:
+        return self._initial_primary_count + (1 if self.mystery_enabled else 0)
+
     def to_dict(self):
         return {
             "years_remaining": sorted(self.remaining_primary),
-            "mystery_pool_remaining": len(self.remaining_mystery),
-            "rounds_remaining": len(self.remaining_primary) + len(self.remaining_mystery),
+            "mystery_available": self._mystery_available(),
+            "rounds_remaining": len(self.remaining_primary) + (1 if self._mystery_available() else 0),
         }
 
 
-def _select_round(cur, year: int):
+def _select_round(cur, year: int, settings: dict):
     """Spin category + rank for a fixed year, retrying combos that don't
-    have enough qualifying rows to resolve a rank 10-35 target."""
-    categories = list(STAT_DEFINITIONS)
+    have enough qualifying rows to resolve a target rank within the
+    room's configured rank range."""
+    rank_min, rank_max = settings["rank_min"], settings["rank_max"]
+    rank_range = list(range(rank_min, rank_max + 1))
+    min_rows = rank_max
+    categories = list(settings["stat_keys"])
     random.shuffle(categories)
     for stat_key in categories:
-        rows = _get_leaderboard(cur, year, stat_key)
-        if len(rows) < MIN_QUALIFYING_ROWS:
+        stat_expr, _label = STAT_DEFINITIONS[stat_key]
+        rows = _get_leaderboard(cur, year, stat_expr)
+        if len(rows) < min_rows:
             continue
-        rank = random.choice(RANK_RANGE)
+        rank = random.choice(rank_range)
         target = rows[rank - 1]
         return stat_key, rank, rows, target
-    raise ValueError(f"No stat category for {year} has enough qualifying players for Triple Threat")
+    raise ValueError(
+        f"No enabled stat category for {year} has enough qualifying players for rank {rank_min}-{rank_max}"
+    )
 
 
 def _room_public_state(room):
     round_ = room["current_round"]
+    settings = room["settings"]
     public_round = None
     if round_:
         public_round = {
@@ -174,17 +252,20 @@ def _room_public_state(room):
         }
         if round_["revealed"]:
             public_round["target_player"] = round_["target_player"]
+            public_round["target_value"] = round_["target_value"]
             public_round["results"] = round_["results"]
+            public_round["nearby_leaderboard"] = round_["nearby_leaderboard"]
 
     return {
         "code": room["code"],
         "is_public": room["is_public"],
         "status": room["status"],
         "round_index": room["round_index"],
-        "total_rounds": TOTAL_ROUNDS,
+        "total_rounds": room["year_wheel"].total_rounds(),
         "wheel": room["year_wheel"].to_dict(),
-        "stat_wheel_options": STAT_WHEEL_OPTIONS,
-        "rank_wheel_options": RANK_RANGE,
+        "settings": settings,
+        "stat_wheel_options": [STAT_DEFINITIONS[k][1] for k in settings["stat_keys"]],
+        "rank_wheel_options": list(range(settings["rank_min"], settings["rank_max"] + 1)),
         "current_round": public_round,
         "history": room["history"],
         "winner": room["winner"],
@@ -201,16 +282,18 @@ def _room_public_state(room):
     }
 
 
-def create_room(is_public=False):
+def create_room(is_public=False, settings=None):
     code = uuid.uuid4().hex[:5].upper()
     while code in TRIPLE_THREAT_ROOMS:
         code = uuid.uuid4().hex[:5].upper()
+    resolved_settings = resolve_settings(settings)
     room = {
         "code": code,
         "is_public": bool(is_public),
         "status": "waiting",
         "players": {},
-        "year_wheel": YearWheelState(),
+        "settings": resolved_settings,
+        "year_wheel": YearWheelState(resolved_settings),
         "round_index": 0,
         "current_round": None,
         "history": [],
@@ -282,7 +365,7 @@ def _spin_new_round(conn, room):
 
     with conn.cursor() as cur:
         year, was_mystery = room["year_wheel"].spin()
-        stat_key, rank, rows, target = _select_round(cur, year)
+        stat_key, rank, rows, target = _select_round(cur, year, room["settings"])
 
     room["round_index"] += 1
     room["current_round"] = {
@@ -294,9 +377,11 @@ def _spin_new_round(conn, room):
         "leaderboard": rows,
         "target_player": target["display_name"],
         "target_player_id": target["player_id"],
+        "target_value": target["value"],
         "guesses": {},
         "revealed": False,
         "results": None,
+        "nearby_leaderboard": None,
         "year_wheel_options": year_wheel_options,
     }
 
@@ -333,20 +418,35 @@ def _reveal_round(room):
         normalized = _normalize_name(guess_text)
         matched = by_normalized.get(normalized)
         guessed_rank = None
+        guessed_value = None
         guessed_display = guess_text
         if matched:
             guessed_display = matched["display_name"]
             guessed_rank = rows.index(matched) + 1
+            guessed_value = matched["value"]
         points = score_guess(round_["rank"], guessed_rank)
         room["players"][display_name]["score"] += points
         results[display_name] = {
             "guess": guessed_display,
             "guessed_rank": guessed_rank,
+            "guessed_value": guessed_value,
             "points": points,
         }
 
+    # A small window of the real leaderboard around the target rank, so
+    # players can see who was actually near the answer (and by how much)
+    # once the round reveals, not just their own guess's outcome.
+    target_rank = round_["rank"]
+    lo = max(0, target_rank - 1 - NEARBY_WINDOW)
+    hi = min(len(rows), target_rank + NEARBY_WINDOW)
+    nearby_leaderboard = [
+        {"rank": idx + 1, "player": rows[idx]["display_name"], "value": rows[idx]["value"]}
+        for idx in range(lo, hi)
+    ]
+
     round_["revealed"] = True
     round_["results"] = results
+    round_["nearby_leaderboard"] = nearby_leaderboard
     round_.pop("leaderboard", None)
 
     room["history"].insert(0, {
@@ -356,6 +456,7 @@ def _reveal_round(room):
         "stat_label": STAT_DEFINITIONS[round_["stat_key"]][1],
         "rank": round_["rank"],
         "target_player": round_["target_player"],
+        "target_value": round_["target_value"],
         "results": results,
     })
 
