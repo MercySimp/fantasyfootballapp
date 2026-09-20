@@ -48,7 +48,7 @@ STAT_DEFINITIONS = {
     "interceptions_thrown": ("interceptions", "Interceptions Thrown"),
     "all_purpose_yards": (FORMULA_SQL["scrimmage_yards"], "All-Purpose Yards"),
     "receptions": ("receptions", "Receptions"),
-    "rushing_attempts": ("rushing_attempts", "Rushing Attempts"),
+    "rushing_attempts": ("carries", "Rushing Attempts"),
     "sacks": ("def_sacks", "Sacks"),
 }
 
