@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Triple Threat</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121822; --panel2:#182130; --border:#26324a;
+    --text:#e8edf5; --muted:#8ea5ba; --accent:#37c98f; --accent2:#6fe3ff;
+    --warn:#ff9f4d; --bad:#ff5d5d; --gold:#ffcc56;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',Arial,sans-serif; min-height:100vh;
+  }
+  .wrap{max-width:1100px; margin:0 auto; padding:24px 16px 60px;}
+  h1{font-size:28px; letter-spacing:1px; margin:0 0 4px;}
+  .subtitle{color:var(--muted); margin:0 0 24px; font-size:14px;}
+
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:20px;}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center;}
+  input[type=text]{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    padding:10px 12px; border-radius:8px; font-size:14px; min-width:180px;
+  }
+  label.chk{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted);}
+  button{
+    background:var(--accent); color:#04140d; border:none; padding:10px 18px;
+    border-radius:8px; font-weight:700; cursor:pointer; font-size:14px; letter-spacing:0.3px;
+  }
+  button.secondary{background:var(--panel2); color:var(--text); border:1px solid var(--border);}
+  button:disabled{opacity:0.4; cursor:not-allowed;}
+  .error{color:var(--bad); font-size:13px; margin-top:8px; min-height:16px;}
+
+  .hidden{display:none !important;}
+
+  /* Wheel row */
+  .wheels{display:flex; gap:24px; justify-content:center; flex-wrap:wrap; margin:20px 0 10px;}
+  .wheel-box{text-align:center;}
+  .wheel-label{color:var(--muted); font-size:12px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px;}
+  .wheel{
+    width:150px; height:150px; border-radius:50%;
+    border:4px solid var(--border); position:relative; overflow:hidden;
+    background:conic-gradient(var(--panel2) 0deg 30deg, var(--panel) 30deg 60deg);
+    box-shadow:0 0 0 6px #0006 inset;
+  }
+  .wheel-face{
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    font-size:26px; font-weight:800; color:var(--accent2);
+    transition:transform 2.4s cubic-bezier(.12,.86,.13,1);
+  }
+  .wheel-pointer{
+    position:absolute; top:-10px; left:50%; transform:translateX(-50%);
+    width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent;
+    border-top:14px solid var(--gold); z-index:5;
+  }
+  .wheel.spinning .wheel-face{ color:var(--muted); }
+
+  .prompt-banner{
+    text-align:center; margin:18px 0; font-size:20px; font-weight:700;
+    color:var(--gold); min-height:28px;
+  }
+  .prompt-sub{text-align:center; color:var(--muted); font-size:13px; margin-bottom:16px;}
+
+  .guess-form{display:flex; gap:10px; justify-content:center; margin-bottom:6px;}
+  .status-line{text-align:center; color:var(--muted); font-size:13px; margin-bottom:14px;}
+
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:1px;}
+  tr.you td{color:var(--accent2);}
+  .pts-pos{color:var(--accent); font-weight:700;}
+  .pts-neg{color:var(--bad); font-weight:700;}
+  .pts-zero{color:var(--muted); font-weight:700;}
+
+  .badge{display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700;}
+  .badge.host{background:#1f2e22; color:var(--accent);}
+  .badge.you{background:#1a2a35; color:var(--accent2);}
+  .badge.waiting{background:#332615; color:var(--warn);}
+
+  .history-item{border-left:3px solid var(--border); padding:8px 12px; margin-bottom:8px; background:var(--panel2); border-radius:0 8px 8px 0;}
+  .history-item .h-title{font-weight:700; color:var(--accent2); font-size:13px;}
+  .history-item .h-answers{font-size:12px; color:var(--muted); margin-top:4px;}
+
+  .grid2{display:grid; grid-template-columns:1.4fr 1fr; gap:20px;}
+  @media (max-width:800px){ .grid2{grid-template-columns:1fr;} }
+
+  .winner-banner{
+    text-align:center; font-size:22px; font-weight:800; color:var(--gold);
+    padding:16px; border:2px dashed var(--gold); border-radius:12px; margin-bottom:16px;
+  }
+  code{background:var(--panel2); padding:2px 6px; border-radius:4px; color:var(--accent2);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TRIPLE THREAT</h1>
+  <p class="subtitle">Spin a season, a stat, and a rank &mdash; guess who finished there. Exact hits cost you.</p>
+
+  <!-- LOBBY -->
+  <div id="lobby-panel" class="panel">
+    <div class="row">
+      <input id="name-input" type="text" placeholder="Display name" maxlength="40">
+      <input id="room-input" type="text" placeholder="Room code (leave blank to create)" maxlength="10" style="text-transform:uppercase;">
+      <label class="chk"><input id="public-check" type="checkbox"> Public room</label>
+      <button id="join-btn">Join / Create Room</button>
+    </div>
+    <div id="lobby-error" class="error"></div>
+  </div>
+
+  <!-- ROOM -->
+  <div id="room-panel" class="hidden">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;">
+        <div>Room <code id="room-code-label"></code> &middot; <span id="room-status-label" class="badge waiting">waiting</span></div>
+        <div>
+          <button id="start-btn" class="hidden">Start Game</button>
+          <button id="advance-btn" class="hidden secondary">Next Spin</button>
+        </div>
+      </div>
+      <div id="room-error" class="error"></div>
+    </div>
+
+    <div id="winner-banner" class="winner-banner hidden"></div>
+
+    <div class="grid2">
+      <div>
+        <div class="panel">
+          <div class="wheels">
+            <div class="wheel-box">
+              <div class="wheel-label">Season</div>
+              <div class="wheel" id="wheel-year"><div class="wheel-pointer"></div><div class="wheel-face" id="face-year">--</div></div>
+            </div>
+            <div class="wheel-box">
+              <div class="wheel-label">Stat</div>
+              <div class="wheel" id="wheel-stat"><div class="wheel-pointer"></div><div class="wheel-face" id="face-stat">--</div></div>
+            </div>
+            <div class="wheel-box">
+              <div class="wheel-label">Rank</div>
+              <div class="wheel" id="wheel-rank"><div class="wheel-pointer"></div><div class="wheel-face" id="face-rank">--</div></div>
+            </div>
+          </div>
+
+          <div class="prompt-banner" id="prompt-banner">Waiting for host to start&hellip;</div>
+          <div class="prompt-sub" id="prompt-sub"></div>
+
+          <div id="guess-area" class="hidden">
+            <div class="guess-form">
+              <input id="guess-input" type="text" placeholder="Your guess (player name)" maxlength="60">
+              <button id="guess-btn">Lock In</button>
+            </div>
+            <div class="status-line" id="guess-status"></div>
+            <div class="error" id="guess-error"></div>
+          </div>
+
+          <div id="reveal-area" class="hidden">
+            <div class="prompt-sub">Round result</div>
+            <table id="reveal-table">
+              <thead><tr><th>Player</th><th>Guess</th><th>Rank Guessed</th><th>Points</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div class="prompt-sub" style="margin-bottom:10px;">Scoreboard</div>
+          <table id="score-table">
+            <thead><tr><th>Player</th><th>Score</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="prompt-sub" style="margin-bottom:10px;">Round History</div>
+          <div id="history-list"><div class="status-line">No rounds yet.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const API_BASE = "";
+  const state = { ws:null, code:null, name:null, room:null, lastRoundNumber:0 };
+
+  const el = id => document.getElementById(id);
+  const lobbyPanel = el('lobby-panel'), roomPanel = el('room-panel');
+
+  function wsUrl(code, name){
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.host}/ws/triple-threat/${encodeURIComponent(code)}?display_name=${encodeURIComponent(name)}`;
+  }
+
+  async function createOrJoinRoom(){
+    const name = el('name-input').value.trim();
+    let code = el('room-input').value.trim().toUpperCase();
+    const isPublic = el('public-check').checked;
+    el('lobby-error').textContent = '';
+    if(!name){ el('lobby-error').textContent = 'Enter a display name.'; return; }
+
+    try {
+      if(!code){
+        const resp = await fetch(`${API_BASE}/api/triple-threat/rooms`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({is_public:isPublic})
+        });
+        if(!resp.ok) throw new Error((await resp.json()).detail || 'Could not create room');
+        const data = await resp.json();
+        code = data.code;
+      }
+      connectSocket(code, name);
+    } catch(err){
+      el('lobby-error').textContent = err.message;
+    }
+  }
+
+  function connectSocket(code, name){
+    state.code = code; state.name = name;
+    const socket = new WebSocket(wsUrl(code, name));
+    socket.onopen = () => { state.ws = socket; };
+    socket.onclose = () => { el('lobby-error').textContent = 'Disconnected from room.'; };
+    socket.onerror = () => { el('lobby-error').textContent = 'Connection error.'; };
+    socket.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      handleMessage(msg);
+    };
+  }
+
+  function send(payload){
+    if(state.ws && state.ws.readyState === WebSocket.OPEN){
+      state.ws.send(JSON.stringify(payload));
+    }
+  }
+
+  function handleMessage(msg){
+    if(msg.type === 'error'){
+      el('room-error').textContent = msg.message;
+      el('guess-error').textContent = msg.message;
+      return;
+    }
+    if(msg.room){
+      state.room = msg.room;
+      renderRoom();
+    }
+    if(msg.type === 'round_start'){
+      el('guess-error').textContent = '';
+      animateWheels();
+    }
+    if(msg.type === 'round_revealed'){
+      showReveal();
+    }
+    if(msg.type === 'guess_received'){
+      el('guess-status').textContent = 'Guess locked in. Waiting on other players\u2026';
+      el('guess-area').querySelector('input').disabled = true;
+      el('guess-area').querySelector('button').disabled = true;
+    }
+  }
+
+  function renderRoom(){
+    lobbyPanel.classList.add('hidden');
+    roomPanel.classList.remove('hidden');
+    const room = state.room;
+    el('room-code-label').textContent = room.code;
+
+    const statusLabel = el('room-status-label');
+    statusLabel.textContent = room.status;
+    statusLabel.className = 'badge ' + (room.status === 'playing' ? 'you' : room.status === 'complete' ? 'host' : 'waiting');
+
+    const me = room.players.find(p => p.display_name === state.name);
+    const isHost = !!(me && me.is_host);
+
+    el('start-btn').classList.toggle('hidden', !(isHost && room.status === 'waiting'));
+    const canAdvance = isHost && room.status === 'playing' && room.current_round && room.current_round.revealed;
+    el('advance-btn').classList.toggle('hidden', !canAdvance);
+
+    renderScoreboard(room);
+    renderHistory(room);
+    renderCurrentRound(room);
+
+    if(room.status === 'complete'){
+      const banner = el('winner-banner');
+      banner.classList.remove('hidden');
+      if(Array.isArray(room.winner)){
+        banner.textContent = room.winner.length ? `Tie between: ${room.winner.join(', ')}` : 'Game complete.';
+      } else {
+        banner.textContent = room.winner ? `${room.winner} wins Triple Threat!` : 'Game complete.';
+      }
+    } else {
+      el('winner-banner').classList.add('hidden');
+    }
+  }
+
+  function renderScoreboard(room){
+    const tbody = document.querySelector('#score-table tbody');
+    tbody.innerHTML = '';
+    const sorted = [...room.players].sort((a,b) => b.score - a.score);
+    for(const p of sorted){
+      const tr = document.createElement('tr');
+      if(p.display_name === state.name) tr.classList.add('you');
+      const badges = [];
+      if(p.is_host) badges.push('<span class="badge host">HOST</span>');
+      if(!p.connected) badges.push('<span class="badge waiting">OFFLINE</span>');
+      else if(room.current_round && !room.current_round.revealed && p.has_answered_current_round) badges.push('<span class="badge you">LOCKED</span>');
+      tr.innerHTML = `<td>${escapeHtml(p.display_name)}</td><td>${p.score}</td><td>${badges.join(' ')}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function renderHistory(room){
+    const container = el('history-list');
+    if(!room.history || room.history.length === 0){
+      container.innerHTML = '<div class="status-line">No rounds yet.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    for(const h of room.history){
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      const yearLabel = h.was_mystery ? `${h.year} (mystery)` : `${h.year}`;
+      const answers = Object.entries(h.results).map(([name, r]) =>
+        `${escapeHtml(name)}: ${escapeHtml(r.guess || '(no guess)')} &rarr; ${r.points > 0 ? '+' : ''}${r.points}`
+      ).join(' &middot; ');
+      div.innerHTML = `<div class="h-title">#${h.round_number} &mdash; ${yearLabel} ${escapeHtml(h.stat_label)}, Rank ${h.rank} &mdash; ${escapeHtml(h.target_player)}</div>
+        <div class="h-answers">${answers}</div>`;
+      container.appendChild(div);
+    }
+  }
+
+  function renderCurrentRound(room){
+    const round = room.current_round;
+    const guessArea = el('guess-area'), revealArea = el('reveal-area');
+    const bannerEl = el('prompt-banner'), subEl = el('prompt-sub');
+
+    if(!round){
+      bannerEl.textContent = room.status === 'complete' ? 'Game complete!' : 'Waiting for host to start\u2026';
+      subEl.textContent = '';
+      guessArea.classList.add('hidden');
+      revealArea.classList.add('hidden');
+      setWheelFaces('--','--','--');
+      return;
+    }
+
+    setWheelFaces(round.was_mystery ? `${round.year}\u2605` : `${round.year}`, round.stat_label, `#${round.rank}`);
+
+    if(round.round_number !== state.lastRoundNumber){
+      state.lastRoundNumber = round.round_number;
+    }
+
+    if(!round.revealed){
+      bannerEl.textContent = `${round.year}${round.was_mystery ? ' (mystery)' : ''} \u2014 ${round.stat_label}, Rank #${round.rank}`;
+      subEl.textContent = `Round ${round.round_number} of ${room.total_rounds}. Guess who finished #${round.rank} in ${round.stat_label} in ${round.year}.`;
+      revealArea.classList.add('hidden');
+
+      const me = room.players.find(p => p.display_name === state.name);
+      if(me && !me.has_answered_current_round){
+        guessArea.classList.remove('hidden');
+        const input = guessArea.querySelector('input'), btn = guessArea.querySelector('button');
+        input.disabled = false; btn.disabled = false;
+        el('guess-status').textContent = '';
+      } else {
+        guessArea.classList.remove('hidden');
+        guessArea.querySelector('input').disabled = true;
+        guessArea.querySelector('button').disabled = true;
+        el('guess-status').textContent = 'Guess locked in. Waiting on other players\u2026';
+      }
+    } else {
+      bannerEl.textContent = `${round.target_player}`;
+      subEl.textContent = `was #${round.rank} in ${round.stat_label} in ${round.year}${round.was_mystery ? ' (mystery year)' : ''}.`;
+      guessArea.classList.add('hidden');
+      showReveal();
+    }
+  }
+
+  function showReveal(){
+    const room = state.room;
+    const round = room && room.current_round;
+    if(!round || !round.revealed) return;
+    const revealArea = el('reveal-area');
+    revealArea.classList.remove('hidden');
+    const tbody = document.querySelector('#reveal-table tbody');
+    tbody.innerHTML = '';
+    for(const [name, r] of Object.entries(round.results)){
+      const tr = document.createElement('tr');
+      if(name === state.name) tr.classList.add('you');
+      const ptsClass = r.points < 0 ? 'pts-neg' : r.points === 0 ? 'pts-zero' : 'pts-pos';
+      tr.innerHTML = `<td>${escapeHtml(name)}</td><td>${escapeHtml(r.guess || '(no guess)')}</td>
+        <td>${r.guessed_rank ? '#' + r.guessed_rank : '&mdash;'}</td>
+        <td class="${ptsClass}">${r.points > 0 ? '+' : ''}${r.points}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function setWheelFaces(year, stat, rank){
+    el('face-year').textContent = year;
+    el('face-stat').textContent = stat;
+    el('face-rank').textContent = rank;
+  }
+
+  function animateWheels(){
+    ['wheel-year','wheel-stat','wheel-rank'].forEach((id, i) => {
+      const wheel = el(id);
+      const face = wheel.querySelector('.wheel-face');
+      wheel.classList.add('spinning');
+      const spins = 3 + i;
+      face.style.transform = `rotate(${spins * 360}deg)`;
+      setTimeout(() => { wheel.classList.remove('spinning'); }, 2500);
+    });
+  }
+
+  function escapeHtml(str){
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  el('join-btn').addEventListener('click', createOrJoinRoom);
+  el('start-btn').addEventListener('click', () => send({type:'start_game'}));
+  el('advance-btn').addEventListener('click', () => send({type:'advance_round'}));
+  el('guess-btn').addEventListener('click', () => {
+    const val = el('guess-input').value.trim();
+    if(!val){ el('guess-error').textContent = 'Enter a guess.'; return; }
+    el('guess-error').textContent = '';
+    send({type:'submit_guess', guess: val});
+  });
+  el('guess-input').addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ el('guess-btn').click(); }
+  });
+})();
+</script>
+</body>
+</html>
